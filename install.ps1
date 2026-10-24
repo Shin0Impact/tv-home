@@ -3,10 +3,13 @@
 #         .\install.ps1 -Tv 10.0.0.20
 param([string]$Tv = "10.0.0.13")
 $ErrorActionPreference = "Stop"
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$ProgressPreference = "SilentlyContinue"
 $url = "https://github.com/Shin0Impact/tv-home/releases/latest/download/tv-home.apk"
 $apk = Join-Path $env:TEMP "tv-home.apk"
 Write-Host "Downloading latest build..."
-Invoke-WebRequest -Uri $url -OutFile $apk
+curl.exe -L -f -sS -o $apk $url
+if ($LASTEXITCODE -ne 0) { throw "Download failed (is the Latest build release published?)" }
 adb connect "${Tv}:5555"
 adb -s "${Tv}:5555" install -r $apk
 Write-Host "Done."
