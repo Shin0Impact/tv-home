@@ -11,11 +11,13 @@ final class Theme {
 
     static final String DARK = "dark";
     static final String LIGHT = "light";
+    static final String GRAY = "gray";
+    static final String OLED = "oled";
     static final String COLOUR = "colour";
     static final String ART = "art";
 
-    static final String[] MODES = {DARK, LIGHT, COLOUR, ART};
-    static final String[] MODE_NAMES = {"Dark", "Light", "Colour", "Hero art"};
+    static final String[] MODES = {DARK, GRAY, OLED, LIGHT, COLOUR, ART};
+    static final String[] MODE_NAMES = {"Dark", "Gray", "OLED black", "Light", "Colour", "Hero art"};
 
     static final int[] ACCENTS = {0xFF4C8DFF, 0xFF8E5CFF, 0xFF2FBF71, 0xFFE5484D, 0xFFFF8A3D};
     static final String[] ACCENT_NAMES = {"Blue", "Purple", "Green", "Red", "Orange"};
@@ -70,9 +72,22 @@ final class Theme {
         int accent = ACCENTS[accentIdx];
         if (LIGHT.equals(mode)) {
             return new Theme(LIGHT, true,
-                    0xFFE8ECF3, 0xFFF3F0EC, 0xFFE6EAF2,
+                    0xFFDDE5F5, 0xFFF5F1EC, 0xFFDCE4F1,
                     0xB3FFFFFF, 0xF5F4F6FA, 0xFFD5DAE4, 0xFFFFFFFF,
                     0xFF14171F, 0xFF5B6475, 0xFF14171F, 0xFF14171F, 0xFFFFFFFF, accent);
+        }
+        if (GRAY.equals(mode)) {
+            return new Theme(GRAY, false,
+                    0xFF1B1D22, 0xFF30343C, 0xFF191B1F,
+                    0x2AFFFFFF, 0xF2282B32, 0xFF383C45, 0xFF3A3E47,
+                    0xFFFFFFFF, 0xFFA7ADB9, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF15171B, accent);
+        }
+        if (OLED.equals(mode)) {
+            // Pure black so the pixels switch off; panels are only a faint lift.
+            return new Theme(OLED, false,
+                    0xFF000000, 0xFF000000, 0xFF000000,
+                    0x1CFFFFFF, 0xFA000000, 0xFF101114, 0xFF17181C,
+                    0xFFFFFFFF, 0xFF8B92A1, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF000000, accent);
         }
         if (COLOUR.equals(mode)) {
             return new Theme(COLOUR, false,
@@ -84,8 +99,8 @@ final class Theme {
         }
         boolean art = ART.equals(mode);
         return new Theme(art ? ART : DARK, false,
-                0xFF0A0E1A, 0xFF141B30, 0xFF0A0E1A,
-                0x24FFFFFF, 0xF2121829, 0xFF1C2338, 0xFF232B42,
+                0xFF0A0F20, 0xFF1D2548, 0xFF0B1224,
+                0x26FFFFFF, 0xF2121829, 0xFF1C2338, 0xFF232B42,
                 0xFFFFFFFF, 0xFF9AA3B8, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF0A0E1A, accent);
     }
 
@@ -108,6 +123,16 @@ final class Theme {
         int g = Math.round(ag + (bg - ag) * t);
         int bl = Math.round(ab + (bb - ab) * t);
         return 0xFF000000 | (r << 16) | (g << 8) | bl;
+    }
+
+    /** Moves a colour toward another by t, keeping its own transparency. */
+    static int tone(int c, int target, float t) {
+        return (c & 0xFF000000) | (mix(c, target, t) & 0x00FFFFFF);
+    }
+
+    /** A slight top-to-bottom gradient for a surface: a touch lighter on top, a touch deeper below. */
+    static int[] grad(int c) {
+        return new int[]{tone(c, 0xFFFFFFFF, 0.08f), tone(c, 0xFF000000, 0.12f)};
     }
 
     static String modeName(String mode) {

@@ -197,6 +197,7 @@ public class HomeActivity extends Activity {
     private int cardH;
     private Theme th;
     private IconButton wifiBtn;
+    private IconButton gearBtn;
     private ScrollView scroll;
     private LinearLayout grid;
     private View headerView;
@@ -232,6 +233,7 @@ public class HomeActivity extends Activity {
     /** The home screen while it is showing; the accessibility service uses it for Home-on-Home. */
     static volatile HomeActivity visible;
     private boolean onScreen;
+    private boolean openSettingsOnResume;
     private String focusAfter;
 
     private final Runnable rotate = new Runnable() {
@@ -288,9 +290,23 @@ public class HomeActivity extends Activity {
         super.onResume();
         onScreen = true;
         visible = this;
+        if (openSettingsOnResume) {
+            openSettingsOnResume = false;
+            ui.post(() -> showHomeSettings(0));
+        }
         if (wifiBtn != null) {
             wifiBtn.online = isOnline();
             wifiBtn.invalidate();
+        }
+        if (gearBtn != null) {
+            final IconButton g = gearBtn;
+            io.execute(() -> {
+                final boolean any = MediaListener.count(HomeActivity.this) > 0;
+                ui.post(() -> {
+                    g.badge = any;
+                    g.invalidate();
+                });
+            });
         }
         refresh(false);
         loadPrograms();
@@ -313,6 +329,9 @@ public class HomeActivity extends Activity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        if (intent != null && intent.getBooleanExtra("settings", false)) {
+            openSettingsOnResume = true; // from the quick settings panel's TV Home orb
+        }
         // Home pressed while already on the home screen: close menus, leave move mode, go to the top.
         dismissDialog();
         if (moveApp != null) {
@@ -452,13 +471,14 @@ public class HomeActivity extends Activity {
         header.addView(time, timeLp);
 
         IconButton wifi = new IconButton(this, IconButton.WIFI);
-        wifi.setFocusable(false);
+        wifi.setOnClickListener(v -> safeStart(new Intent(Settings.ACTION_WIFI_SETTINGS)));
         wifi.online = isOnline();
         wifiBtn = wifi;
         header.addView(wifi, iconParams());
 
         IconButton gear = new IconButton(this, IconButton.GEAR);
         gear.setOnClickListener(v -> showQuickSettings());
+        gearBtn = gear;
         header.addView(gear, iconParams());
 
         IconButton sliders = new IconButton(this, IconButton.SLIDERS);
@@ -506,16 +526,17 @@ public class HomeActivity extends Activity {
         }
     }
 
-    /** A round icon button drawn in code: Wi-Fi (not focusable), settings gear, or sliders. */
+    /** A round icon button drawn in code: Wi-Fi, settings gear, or sliders. */
     private class IconButton extends View {
-        static final int WIFI = 0;
-        static final int GEAR = 1;
-        static final int SLIDERS = 2;
+        static final int WIFI = Icons.WIFI;
+        static final int GEAR = Icons.GEAR;
+        static final int SLIDERS = Icons.SLIDERS;
 
         private final int kind;
         private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final RectF r = new RectF();
         boolean online = true;
+        /** A small dot on the icon: there are notifications waiting. */
+        boolean badge;
 
         IconButton(Context c, int kind) {
             super(c);
@@ -544,55 +565,11 @@ public class HomeActivity extends Activity {
             if (kind == WIFI && !online) {
                 color = th.dim;
             }
-            p.setColor(color);
-            float s = Math.min(w, h);
-            float cx = w / 2;
-            float cy = h / 2;
-            p.setStrokeCap(Paint.Cap.ROUND);
-            if (kind == WIFI) {
-                p.setStyle(Paint.Style.STROKE);
-                p.setStrokeWidth(s * 0.07f);
-                float by = cy + s * 0.2f;
-                for (int i = 1; i <= 3; i++) {
-                    float rad = s * 0.13f * i;
-                    r.set(cx - rad, by - rad, cx + rad, by + rad);
-                    cv.drawArc(r, 225, 90, false, p);
-                }
+            Icons.draw(cv, kind, w / 2, h / 2, Math.min(w, h), color, f ? th.focusBg : th.bgA);
+            if (badge) {
                 p.setStyle(Paint.Style.FILL);
-                cv.drawCircle(cx, by, s * 0.045f, p);
-            } else if (kind == GEAR) {
-                p.setStyle(Paint.Style.STROKE);
-                p.setStrokeWidth(s * 0.09f);
-                cv.drawCircle(cx, cy, s * 0.17f, p);
-                p.setStyle(Paint.Style.FILL);
-                for (int i = 0; i < 8; i++) {
-                    cv.save();
-                    cv.rotate(i * 45f, cx, cy);
-                    r.set(cx - s * 0.055f, cy - s * 0.31f, cx + s * 0.055f, cy - s * 0.2f);
-                    cv.drawRoundRect(r, s * 0.03f, s * 0.03f, p);
-                    cv.restore();
-                }
-                p.setStyle(Paint.Style.STROKE);
-                p.setStrokeWidth(s * 0.07f);
-                cv.drawCircle(cx, cy, s * 0.235f, p);
-            } else {
-                p.setStyle(Paint.Style.STROKE);
-                p.setStrokeWidth(s * 0.06f);
-                float[] ys = {cy - s * 0.2f, cy, cy + s * 0.2f};
-                float[] knobs = {cx + s * 0.1f, cx - s * 0.1f, cx + s * 0.04f};
-                for (int i = 0; i < 3; i++) {
-                    cv.drawLine(cx - s * 0.3f, ys[i], cx + s * 0.3f, ys[i], p);
-                }
-                p.setStyle(Paint.Style.FILL);
-                for (int i = 0; i < 3; i++) {
-                    p.setColor(f ? th.focusBg : th.bgA);
-                    cv.drawCircle(knobs[i], ys[i], s * 0.085f, p);
-                    p.setColor(color);
-                    p.setStyle(Paint.Style.STROKE);
-                    p.setStrokeWidth(s * 0.055f);
-                    cv.drawCircle(knobs[i], ys[i], s * 0.075f, p);
-                    p.setStyle(Paint.Style.FILL);
-                }
+                p.setColor(0xFFFF4D4D);
+                cv.drawCircle(w * 0.74f, h * 0.26f, Math.min(w, h) * 0.1f, p);
             }
         }
     }
@@ -612,12 +589,16 @@ public class HomeActivity extends Activity {
         t.setPadding(dp(22), dp(10), dp(22), dp(10));
         t.setFocusable(true);
         t.setClickable(true);
-        final GradientDrawable bg = new GradientDrawable();
+        final GradientDrawable bg = new GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM, Theme.grad(th.pill));
         bg.setCornerRadius(dp(24));
-        bg.setColor(th.pill);
         t.setBackground(bg);
         t.setOnFocusChangeListener((v, focused) -> {
-            bg.setColor(focused ? th.focusBg : th.pill);
+            if (focused) {
+                bg.setColors(new int[]{th.focusBg, th.focusBg});
+            } else {
+                bg.setColors(Theme.grad(th.pill));
+            }
             t.setTextColor(focused ? th.focusText : th.text);
         });
         return t;
@@ -1855,8 +1836,8 @@ public class HomeActivity extends Activity {
             panel.setClipChildren(false);
             panel.setClipToPadding(false);
             panel.setPadding(dp(20), dp(18), dp(20), dp(18));
-            GradientDrawable panelBg = new GradientDrawable();
-            panelBg.setColor(th.panel);
+            GradientDrawable panelBg = new GradientDrawable(
+                    GradientDrawable.Orientation.TOP_BOTTOM, Theme.grad(th.panel));
             panelBg.setCornerRadius(dp(28));
             panel.setBackground(panelBg);
 
@@ -2130,75 +2111,10 @@ public class HomeActivity extends Activity {
         render(new ArrayList<>(shownApps));
     }
 
-    /** The quick settings side panel, opened by the remote's Settings button or the Settings pill. */
+    /** The quick settings panel (orbs and notifications), opened by the remote's Settings button or the gear. */
     private void showQuickSettings() {
         dismissDialog();
-        final String[] names = {
-                "Network & Internet", "Display", "Sound", "Bluetooth", "Keyboard",
-                "Screen saver", "Date & time", "Accounts", "All settings"};
-        final String[] actions = {
-                Settings.ACTION_WIFI_SETTINGS, Settings.ACTION_DISPLAY_SETTINGS,
-                Settings.ACTION_SOUND_SETTINGS, Settings.ACTION_BLUETOOTH_SETTINGS,
-                Settings.ACTION_INPUT_METHOD_SETTINGS, Settings.ACTION_DREAM_SETTINGS,
-                Settings.ACTION_DATE_SETTINGS, Settings.ACTION_SYNC_SETTINGS,
-                Settings.ACTION_SETTINGS};
-
-        final Dialog d = new Dialog(this, android.R.style.Theme_Material_NoActionBar);
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(28), dp(32), dp(28), dp(24));
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(th.sheet);
-        bg.setCornerRadii(new float[]{dp(24), dp(24), 0, 0, 0, 0, dp(24), dp(24)});
-        panel.setBackground(bg);
-
-        TextView title = new TextView(this);
-        title.setText("Quick settings");
-        title.setTextColor(th.text);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
-        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        title.setPadding(0, 0, 0, dp(16));
-        panel.addView(title);
-
-        ScrollView sv = new ScrollView(this);
-        sv.setVerticalScrollBarEnabled(false);
-        LinearLayout list = new LinearLayout(this);
-        list.setOrientation(LinearLayout.VERTICAL);
-        for (int i = 0; i < names.length; i++) {
-            final String action = names[i].equals("Accounts") ? Settings.ACTION_SYNC_SETTINGS : actions[i];
-            TextView row = pill(names[i]);
-            row.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
-            row.setOnClickListener(v -> {
-                d.dismiss();
-                safeStart(new Intent(action));
-            });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp.bottomMargin = dp(10);
-            list.addView(row, lp);
-        }
-        sv.addView(list);
-        panel.addView(sv, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-
-        d.setContentView(panel);
-        d.setOnKeyListener((dlg, keyCode, event) -> {
-            if (keyCode == KeyEvent.KEYCODE_SETTINGS && event.getAction() == KeyEvent.ACTION_UP) {
-                dlg.dismiss();
-                return true;
-            }
-            return false;
-        });
-        openDialog = d;
-        d.show();
-        Window window = d.getWindow();
-        if (window != null) {
-            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            window.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-            window.setLayout(dp(380), ViewGroup.LayoutParams.MATCH_PARENT);
-            window.setDimAmount(0.55f);
-            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-        }
+        safeStart(new Intent(this, PanelActivity.class));
     }
 
     /** Rebuilds the whole screen with the colours of the chosen theme. */
