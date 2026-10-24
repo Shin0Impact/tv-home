@@ -51,7 +51,13 @@ import android.widget.TextClock;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
@@ -79,6 +85,8 @@ public class HomeActivity extends Activity {
     private static final int TOP_ROW = 5;
     private static final int GRID_COLS = 7;
     private static final int ROTATE_MS = 6000;
+    private static final int HISTORY_PER_APP = 4;
+    private static final int HISTORY_TOTAL = 40;
 
     private static final int CARD_COLOR = 0xFF1C2338;
     private static final int PILL_COLOR = 0xFF232B42;
@@ -190,6 +198,7 @@ public class HomeActivity extends Activity {
         @Override
         public void run() {
             loadPrograms();
+            recordHistoryAsync();
             if (focusedApp != null) {
                 int before = heroItems.size();
                 heroItems = buildHeroItems(focusedApp);
@@ -225,6 +234,7 @@ public class HomeActivity extends Activity {
         super.onResume();
         refresh(false);
         loadPrograms();
+        recordHistoryAsync();
         ui.removeCallbacks(rotate);
         ui.postDelayed(rotate, ROTATE_MS);
     }
@@ -683,6 +693,34 @@ public class HomeActivity extends Activity {
             it.intent = a.launch;
             out.add(it);
         }
+        // Titles remembered from earlier playback in this app (live ones above take priority).
+        Set<String> seen = new HashSet<>();
+        for (HeroItem h : out) {
+            seen.add(h.title);
+        }
+        try {
+            JSONArray hist = new JSONArray(prefs.getString("history", "[]"));
+            for (int i = 0; i < hist.length(); i++) {
+                JSONObject o = hist.getJSONObject(i);
+                if (!a.pkg.equals(o.optString("pkg")) || seen.contains(o.optString("title"))) {
+                    continue;
+                }
+                HeroItem h = new HeroItem();
+                h.appLabel = a.label;
+                h.title = o.optString("title");
+                String sub = o.optString("sub");
+                h.subtitle = "Recently played" + (sub.isEmpty() ? "" : "  ·  " + sub);
+                String art = o.optString("art");
+                h.artUri = art.isEmpty() ? null : art;
+                h.banner = a.banner;
+                h.icon = a.icon;
+                h.intent = a.launch;
+                out.add(h);
+                seen.add(h.title);
+            }
+        } catch (Exception ignored) {
+            // unreadable history: skip it
+        }
         List<HeroItem> published = programsByPkg.get(a.pkg);
         if (published != null) {
             for (HeroItem p : published) {
@@ -717,6 +755,121 @@ public class HomeActivity extends Activity {
             readPrograms(map, TvContract.PreviewPrograms.CONTENT_URI, "Recommended");
             programsByPkg = map;
         });
+    }
+
+    private void recordHistoryAsync() {
+        if (!io.isShutdown()) {
+            io.execute(this::recordHistory);
+        }
+    }
+
+    /**
+     * Remembers what apps have played or paused, so it can be shown again after the app stops.
+     * Everything stays on this TV (preferences and a small artwork cache).
+     */
+    private void recordHistory() {
+        List<MediaController> list = sessions();
+        if (list.isEmpty()) {
+            return;
+        }
+        try {
+            JSONArray arr = new JSONArray(prefs.getString("history", "[]"));
+            List<JSONObject> items = new ArrayList<>();
+            for (int i = 0; i < arr.length(); i++) {
+                items.add(arr.getJSONObject(i));
+            }
+            boolean changed = false;
+            for (MediaController c : list) {
+                MediaMetadata md = c.getMetadata();
+                String pkg = c.getPackageName();
+                if (md == null || pkg == null) {
+                    continue;
+                }
+                String title = firstNonEmpty(md.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE),
+                        md.getString(MediaMetadata.METADATA_KEY_TITLE));
+                if (title == null) {
+                    continue;
+                }
+                String detail = firstNonEmpty(md.getString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE),
+                        md.getString(MediaMetadata.METADATA_KEY_ARTIST));
+                String art = firstNonEmpty(md.getString(MediaMetadata.METADATA_KEY_ART_URI),
+                        md.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI),
+                        md.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI));
+                if (art == null) {
+                    Bitmap b = firstBitmap(md.getBitmap(MediaMetadata.METADATA_KEY_ART),
+                            md.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART),
+                            md.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON));
+                    if (b != null) {
+                        art = saveArt(b, pkg, title);
+                    }
+                }
+                JSONObject old = null;
+                for (JSONObject o : items) {
+                    if (pkg.equals(o.optString("pkg")) && title.equals(o.optString("title"))) {
+                        old = o;
+                        break;
+                    }
+                }
+                if (art == null && old != null && !old.optString("art").isEmpty()) {
+                    art = old.optString("art");
+                }
+                if (old != null && items.indexOf(old) == 0
+                        && (art == null ? "" : art).equals(old.optString("art"))) {
+                    continue; // already the newest entry, nothing new
+                }
+                if (old != null) {
+                    items.remove(old);
+                }
+                JSONObject entry = new JSONObject();
+                entry.put("pkg", pkg);
+                entry.put("title", title);
+                entry.put("sub", detail == null ? "" : detail);
+                entry.put("art", art == null ? "" : art);
+                items.add(0, entry);
+                changed = true;
+            }
+            if (!changed) {
+                return;
+            }
+            // Keep a few per app and a limited total.
+            Map<String, Integer> perApp = new HashMap<>();
+            JSONArray out = new JSONArray();
+            for (JSONObject o : items) {
+                String p = o.optString("pkg");
+                int n = perApp.containsKey(p) ? perApp.get(p) : 0;
+                if (n >= HISTORY_PER_APP || out.length() >= HISTORY_TOTAL) {
+                    continue;
+                }
+                perApp.put(p, n + 1);
+                out.put(o);
+            }
+            prefs.edit().putString("history", out.toString()).apply();
+        } catch (Exception ignored) {
+            // history is a nicety; never let it break the home screen
+        }
+    }
+
+    private String saveArt(Bitmap b, String pkg, String title) {
+        try {
+            File dir = new File(getCacheDir(), "art");
+            if (!dir.exists() && !dir.mkdirs()) {
+                return null;
+            }
+            File f = new File(dir, Integer.toHexString((pkg + "|" + title).hashCode()) + ".jpg");
+            Bitmap scaled = b;
+            if (b.getWidth() > 960) {
+                scaled = Bitmap.createScaledBitmap(b, 960, Math.max(1, b.getHeight() * 960 / b.getWidth()), true);
+            }
+            FileOutputStream out = new FileOutputStream(f);
+            try {
+                scaled.compress(Bitmap.CompressFormat.JPEG, 85, out);
+            } finally {
+                out.close();
+            }
+            return Uri.fromFile(f).toString();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private void readPrograms(Map<String, List<HeroItem>> map, Uri uri, String kind) {
@@ -1138,6 +1291,9 @@ public class HomeActivity extends Activity {
                 conn.setConnectTimeout(5000);
                 conn.setReadTimeout(8000);
                 in = conn.getInputStream();
+            } else if ("file".equals(scheme) && uri.getPath() != null
+                    && uri.getPath().startsWith(getCacheDir().getAbsolutePath())) {
+                in = new FileInputStream(uri.getPath()); // only our own artwork cache
             } else if ("content".equals(scheme) || "android.resource".equals(scheme)) {
                 in = getContentResolver().openInputStream(uri);
             } else {
