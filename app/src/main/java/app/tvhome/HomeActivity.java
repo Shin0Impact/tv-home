@@ -726,12 +726,31 @@ public class HomeActivity extends Activity {
                 continue;
             }
             MediaMetadata md = c.getMetadata();
-            if (md == null) {
-                continue;
-            }
-            String title = firstNonEmpty(md.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE),
+            String title = md == null ? null : firstNonEmpty(
+                    md.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE),
                     md.getString(MediaMetadata.METADATA_KEY_TITLE));
             if (title == null) {
+                // The app doesn't say what is on (Netflix, for example), but it may still report
+                // that something is paused or playing and how far in: offer to resume that.
+                PlaybackState st = c.getPlaybackState();
+                if (st != null && (st.getState() == PlaybackState.STATE_PAUSED
+                        || st.getState() == PlaybackState.STATE_PLAYING)) {
+                    long sec = Math.max(0, st.getPosition() / 1000);
+                    String clock = sec >= 3600
+                            ? String.format(java.util.Locale.US, "%d:%02d:%02d", sec / 3600, sec / 60 % 60, sec % 60)
+                            : String.format(java.util.Locale.US, "%d:%02d", sec / 60, sec % 60);
+                    HeroItem resume = new HeroItem();
+                    resume.appLabel = a.label;
+                    resume.title = "Continue watching";
+                    resume.subtitle = (st.getState() == PlaybackState.STATE_PLAYING ? "Playing at " : "Paused at ")
+                            + clock + "  \u00B7  press OK to resume";
+                    resume.banner = a.banner;
+                    resume.icon = a.icon;
+                    resume.pending = c.getSessionActivity();
+                    resume.controller = c;
+                    resume.intent = a.launch;
+                    out.add(resume);
+                }
                 continue;
             }
             HeroItem it = new HeroItem();
