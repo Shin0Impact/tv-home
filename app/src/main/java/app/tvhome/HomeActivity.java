@@ -701,12 +701,12 @@ public class HomeActivity extends Activity {
         try {
             c = getContentResolver().query(uri,
                     new String[]{
-                            TvContract.BaseProgramColumns.COLUMN_TITLE,
-                            TvContract.BaseProgramColumns.COLUMN_POSTER_ART_URI,
+                            TvContract.PreviewPrograms.COLUMN_TITLE,
+                            TvContract.PreviewPrograms.COLUMN_POSTER_ART_URI,
                             TvContract.PreviewPrograms.COLUMN_THUMBNAIL_URI,
                             TvContract.PreviewPrograms.COLUMN_INTENT_URI,
                             TvContract.PreviewPrograms.COLUMN_PACKAGE_NAME,
-                            TvContract.BaseProgramColumns.COLUMN_SHORT_DESCRIPTION},
+                            TvContract.PreviewPrograms.COLUMN_SHORT_DESCRIPTION},
                     null, null, null);
             if (c == null) {
                 return;
