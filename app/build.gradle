@@ -2,6 +2,11 @@ plugins {
     id 'com.android.application'
 }
 
+// CI signs every build with one fixed key (stored in GitHub secrets) so updates install over each
+// other. Without the key (local builds, forks) it falls back to Android's default debug key.
+def keystorePath = System.getenv('KEYSTORE_PATH')
+def useCiKey = keystorePath != null && new File(keystorePath).exists()
+
 android {
     namespace 'app.tvhome'
     compileSdk 34
@@ -11,10 +16,26 @@ android {
         minSdk 26
         targetSdk 34
         versionCode 1
-        versionName '0.1.0'
+        versionName '0.2.0'
+    }
+
+    if (useCiKey) {
+        signingConfigs {
+            ci {
+                storeFile file(keystorePath)
+                storePassword System.getenv('KEYSTORE_PASSWORD')
+                keyAlias System.getenv('KEY_ALIAS')
+                keyPassword System.getenv('KEY_PASSWORD')
+            }
+        }
     }
 
     buildTypes {
+        debug {
+            if (useCiKey) {
+                signingConfig signingConfigs.ci
+            }
+        }
         release {
             minifyEnabled false
         }
