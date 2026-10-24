@@ -202,6 +202,8 @@ public class HomeActivity extends Activity {
 
     // Move mode: the app being repositioned, and the app to focus after the next rebuild.
     private String moveApp;
+    private String lastFocusPkg;
+    private boolean onScreen;
     private String focusAfter;
 
     private final Runnable rotate = new Runnable() {
@@ -242,6 +244,7 @@ public class HomeActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        onScreen = true;
         refresh(false);
         loadPrograms();
         recordHistoryAsync();
@@ -252,6 +255,7 @@ public class HomeActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        onScreen = false;
         ui.removeCallbacks(rotate);
         dismissDialog();
     }
@@ -265,6 +269,11 @@ public class HomeActivity extends Activity {
             moveApp = null;
             rerender();
         }
+        if (!onScreen) {
+            // Coming back from another app: keep the app that was highlighted last.
+            return;
+        }
+        // Home pressed while already on the home screen: go back to the start.
         animateScroll(scroll, "scrollY", 0);
         if (firstCell != null) {
             firstCell.requestFocus();
@@ -517,6 +526,7 @@ public class HomeActivity extends Activity {
         cell.setOnFocusChangeListener((v, focused) -> {
             base.onFocusChange(v, focused);
             if (focused) {
+                lastFocusPkg = a.pkg;
                 setHeroApp(a);
             }
         });
@@ -732,7 +742,7 @@ public class HomeActivity extends Activity {
             for (int i = 0; i < hist.length(); i++) {
                 JSONObject o = hist.getJSONObject(i);
                 if (!a.pkg.equals(o.optString("pkg")) || seen.contains(o.optString("title"))
-                        || o.optString("link").isEmpty()) {
+                        || !canOpen(o)) {
                     continue; // only remembered titles that open a specific video
                 }
                 HeroItem h = new HeroItem();
@@ -744,7 +754,7 @@ public class HomeActivity extends Activity {
                 h.artUri = art.isEmpty() ? null : art;
                 h.banner = a.banner;
                 h.icon = a.icon;
-                h.intent = intentFor(o.optString("link"), a);
+                h.intent = intentFor(o, a);
                 out.add(h);
                 seen.add(h.title);
             }
@@ -867,10 +877,33 @@ public class HomeActivity extends Activity {
         return rows + " found";
     }
 
-    /** Opens the exact video when we know its link, otherwise just the app. */
-    private Intent intentFor(String link, App a) {
-        if (link != null && !link.isEmpty()) {
+    /** True when pressing OK on this remembered title can lead somewhere specific, not just the app. */
+    private boolean canOpen(JSONObject o) {
+        return !o.optString("link").isEmpty() || o.optString("pkg").contains("youtube");
+    }
+
+    /**
+     * Opens the exact video when we know its link. YouTube doesn't tell us a link, so for YouTube we
+     * ask it to play by title, the same request a voice search makes.
+     */
+    private Intent intentFor(JSONObject o, App a) {
+        String link = o.optString("link");
+        if (!link.isEmpty()) {
             return new Intent(Intent.ACTION_VIEW, Uri.parse(link))
+                    .setPackage(a.pkg).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        }
+        if (a.pkg.contains("youtube")) {
+            String title = o.optString("title");
+            Intent play = new Intent("android.media.action.MEDIA_PLAY_FROM_SEARCH")
+                    .setPackage(a.pkg)
+                    .putExtra("query", title)
+                    .putExtra("android.intent.extra.focus", "vnd.android.cursor.item/*")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (getPackageManager().resolveActivity(play, 0) != null) {
+                return play;
+            }
+            return new Intent(Intent.ACTION_VIEW,
+                    Uri.parse("https://www.youtube.com/results?search_query=" + Uri.encode(title)))
                     .setPackage(a.pkg).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         }
         return a.launch;
@@ -1194,10 +1227,10 @@ public class HomeActivity extends Activity {
         int shown = 0;
         for (JSONObject o : hist) {
             final App src = byPkg.get(o.optString("pkg"));
-            if (src == null || o.optString("link").isEmpty()) {
+            if (src == null || !canOpen(o)) {
                 continue; // hidden/uninstalled app, or nothing that opens a specific video
             }
-            final Intent open = intentFor(o.optString("link"), src);
+            final Intent open = intentFor(o, src);
             View cell = makeTile(topW, o.optString("title"), null,
                     src.banner != null ? src.banner : src.icon, false);
             String art = o.optString("art");
@@ -1296,7 +1329,8 @@ public class HomeActivity extends Activity {
             applyHeroApp(apps.get(0));
         }
 
-        View target = focusAfter != null ? tiles.get(focusAfter) : null;
+        String want = focusAfter != null ? focusAfter : lastFocusPkg;
+        View target = want != null ? tiles.get(want) : null;
         focusAfter = null;
         if (target != null) {
             target.setScaleX(1.08f); // already enlarged: no "pop" on every step of a move
