@@ -2,6 +2,7 @@ package app.tvhome;
 
 import android.accessibilityservice.AccessibilityService;
 import android.content.Intent;
+import android.provider.Settings;
 import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityEvent;
 
@@ -16,11 +17,15 @@ public class KeyService extends AccessibilityService {
     @Override
     protected boolean onKeyEvent(KeyEvent event) {
         int key = event.getKeyCode();
-        if (key != KeyEvent.KEYCODE_NOTIFICATION && key != KeyEvent.KEYCODE_SETTINGS) {
+        boolean panel = key == KeyEvent.KEYCODE_NOTIFICATION || key == KeyEvent.KEYCODE_SETTINGS;
+        boolean profile = key == KeyEvent.KEYCODE_PROFILE_SWITCH;
+        if (!panel && !profile) {
             return false;
         }
         if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-            Intent open = new Intent(this, PanelActivity.class)
+            Intent open = (profile
+                    ? new Intent(Settings.ACTION_SYNC_SETTINGS)
+                    : new Intent(this, PanelActivity.class))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             try {
                 startActivity(open);

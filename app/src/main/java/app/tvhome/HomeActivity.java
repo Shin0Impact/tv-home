@@ -84,7 +84,7 @@ public class HomeActivity extends Activity {
 
     private static final int TOP_ROW = 5;
     private static final int GRID_COLS = 7;
-    private static final int ROTATE_MS = 6000;
+    private static final int ROTATE_MS = 10000;
     private static final int HISTORY_PER_APP = 4;
     private static final int HISTORY_TOTAL = 40;
 
@@ -112,7 +112,19 @@ public class HomeActivity extends Activity {
         Drawable banner;
         Drawable icon;
         PendingIntent pending;
+        MediaController controller;
         Intent intent;
+    }
+
+    /** One of two stacked views of the hero, so one can fade in over the other with no gap. */
+    private static class HeroLayer {
+        FrameLayout root;
+        ImageView art;
+        ImageView side;
+        TextView app;
+        TextView title;
+        TextView sub;
+        TextView dots;
     }
 
     private static class VScroll extends ScrollView {
@@ -180,13 +192,9 @@ public class HomeActivity extends Activity {
 
     // Hero views.
     private FrameLayout heroRoot;
-    private View heroContent;
-    private ImageView heroArt;
-    private ImageView heroSide;
-    private TextView heroApp;
-    private TextView heroTitle;
-    private TextView heroSub;
-    private TextView heroDots;
+    private HeroLayer heroFront;
+    private HeroLayer heroBack;
+    private Runnable heroFinish;
     private App focusedApp;
     private int heroIdx;
 
@@ -452,7 +460,7 @@ public class HomeActivity extends Activity {
         cell.setClickable(true);
         cell.setClipChildren(false);
 
-        final float radius = dp(12);
+        final float radius = dp(6);
         final FrameLayout card = new FrameLayout(this);
         GradientDrawable cardBg = new GradientDrawable();
         cardBg.setColor(CARD_COLOR);
@@ -486,7 +494,7 @@ public class HomeActivity extends Activity {
 
         final GradientDrawable ring = new GradientDrawable();
         ring.setColor(Color.TRANSPARENT);
-        ring.setCornerRadius(radius);
+        ring.setCornerRadius(Math.max(0f, radius - dp(accent ? 4 : 3) / 2f));
         ring.setStroke(dp(accent ? 4 : 3), accent ? ACCENT : Color.WHITE);
 
         cell.setOnFocusChangeListener((v, focused) -> {
@@ -521,11 +529,77 @@ public class HomeActivity extends Activity {
 
     // ------------------------------------------------------------------ hero
 
+    private HeroLayer makeHeroLayer() {
+        HeroLayer l = new HeroLayer();
+        l.root = new FrameLayout(this);
+
+        l.art = new ImageView(this);
+        l.art.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        l.root.addView(l.art, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        View scrim = new View(this);
+        scrim.setBackground(new GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT, new int[]{0xE6000000, 0x66000000, 0x00000000}));
+        l.root.addView(scrim, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        l.side = new ImageView(this);
+        l.side.setClipToOutline(true);
+        l.side.setOutlineProvider(rounded(dp(6)));
+        FrameLayout.LayoutParams sideLp = new FrameLayout.LayoutParams(dp(300), dp(169),
+                Gravity.END | Gravity.CENTER_VERTICAL);
+        sideLp.rightMargin = dp(40);
+        l.root.addView(l.side, sideLp);
+
+        LinearLayout text = new LinearLayout(this);
+        text.setOrientation(LinearLayout.VERTICAL);
+        text.setGravity(Gravity.BOTTOM);
+        text.setPadding(dp(36), dp(24), dp(36), dp(28));
+
+        l.app = new TextView(this);
+        l.app.setTextColor(0xFFB6BED2);
+        l.app.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        l.app.setLetterSpacing(0.12f);
+        text.addView(l.app);
+
+        l.title = new TextView(this);
+        l.title.setTextColor(Color.WHITE);
+        l.title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 30);
+        l.title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        l.title.setSingleLine(true);
+        l.title.setEllipsize(TextUtils.TruncateAt.END);
+        l.title.setPadding(0, dp(4), dp(340), 0);
+        text.addView(l.title);
+
+        l.sub = new TextView(this);
+        l.sub.setTextColor(0xFFC3CADB);
+        l.sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        l.sub.setSingleLine(true);
+        l.sub.setEllipsize(TextUtils.TruncateAt.END);
+        l.sub.setPadding(0, dp(2), dp(340), 0);
+        text.addView(l.sub);
+
+        l.root.addView(text, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        l.dots = new TextView(this);
+        l.dots.setTextColor(Color.WHITE);
+        l.dots.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        FrameLayout.LayoutParams dotsLp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM | Gravity.END);
+        dotsLp.rightMargin = dp(24);
+        dotsLp.bottomMargin = dp(16);
+        l.root.addView(l.dots, dotsLp);
+        return l;
+    }
+
     private View buildHero() {
         heroRoot = new FrameLayout(this);
         heroRoot.setFocusable(true);
         heroRoot.setClickable(true);
-        final float radius = dp(20);
+        final float radius = dp(8);
         GradientDrawable bg = new GradientDrawable(
                 GradientDrawable.Orientation.TL_BR, new int[]{0xFF26304D, 0xFF121829});
         bg.setCornerRadius(radius);
@@ -533,74 +607,17 @@ public class HomeActivity extends Activity {
         heroRoot.setClipToOutline(true);
         heroRoot.setOutlineProvider(rounded(radius));
 
-        FrameLayout content = new FrameLayout(this);
-        heroContent = content;
-        heroRoot.addView(content, new FrameLayout.LayoutParams(
+        heroFront = makeHeroLayer();
+        heroBack = makeHeroLayer();
+        heroRoot.addView(heroBack.root, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
-        heroArt = new ImageView(this);
-        heroArt.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        content.addView(heroArt, new FrameLayout.LayoutParams(
+        heroRoot.addView(heroFront.root, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
-        View scrim = new View(this);
-        scrim.setBackground(new GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT, new int[]{0xE6000000, 0x66000000, 0x00000000}));
-        content.addView(scrim, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
-        heroSide = new ImageView(this);
-        heroSide.setClipToOutline(true);
-        heroSide.setOutlineProvider(rounded(dp(14)));
-        FrameLayout.LayoutParams sideLp = new FrameLayout.LayoutParams(dp(300), dp(169),
-                Gravity.END | Gravity.CENTER_VERTICAL);
-        sideLp.rightMargin = dp(40);
-        content.addView(heroSide, sideLp);
-
-        LinearLayout text = new LinearLayout(this);
-        text.setOrientation(LinearLayout.VERTICAL);
-        text.setGravity(Gravity.BOTTOM);
-        text.setPadding(dp(36), dp(24), dp(36), dp(28));
-
-        heroApp = new TextView(this);
-        heroApp.setTextColor(0xFFB6BED2);
-        heroApp.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        heroApp.setLetterSpacing(0.12f);
-        text.addView(heroApp);
-
-        heroTitle = new TextView(this);
-        heroTitle.setTextColor(Color.WHITE);
-        heroTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 30);
-        heroTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        heroTitle.setSingleLine(true);
-        heroTitle.setEllipsize(TextUtils.TruncateAt.END);
-        heroTitle.setPadding(0, dp(4), dp(340), 0);
-        text.addView(heroTitle);
-
-        heroSub = new TextView(this);
-        heroSub.setTextColor(0xFFC3CADB);
-        heroSub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        heroSub.setSingleLine(true);
-        heroSub.setEllipsize(TextUtils.TruncateAt.END);
-        heroSub.setPadding(0, dp(2), dp(340), 0);
-        text.addView(heroSub);
-
-        content.addView(text, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
-        heroDots = new TextView(this);
-        heroDots.setTextColor(Color.WHITE);
-        heroDots.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        FrameLayout.LayoutParams dotsLp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM | Gravity.END);
-        dotsLp.rightMargin = dp(24);
-        dotsLp.bottomMargin = dp(16);
-        content.addView(heroDots, dotsLp);
+        heroBack.root.setAlpha(0f);
 
         final GradientDrawable ring = new GradientDrawable();
         ring.setColor(Color.TRANSPARENT);
-        ring.setCornerRadius(radius);
+        ring.setCornerRadius(Math.max(0f, radius - dp(3) / 2f));
         ring.setStroke(dp(3), Color.WHITE);
         heroRoot.setOnFocusChangeListener((v, focused) -> {
             heroRoot.setForeground(focused ? ring : null);
@@ -619,16 +636,25 @@ public class HomeActivity extends Activity {
             return;
         }
         HeroItem it = heroItems.get(Math.min(heroIdx, heroItems.size() - 1));
+        boolean opened = false;
         if (it.pending != null) {
             try {
                 it.pending.send();
-                return;
+                opened = true;
             } catch (Exception ignored) {
                 // fall back to launching the app
             }
         }
-        if (it.intent != null) {
+        if (!opened && it.intent != null) {
             safeStart(it.intent);
+        }
+        if (it.controller != null) {
+            // Something is paused or playing in that app: resume it rather than just opening the app.
+            try {
+                it.controller.getTransportControls().play();
+            } catch (Exception ignored) {
+                // the app refused; it still opened
+            }
         }
     }
 
@@ -639,7 +665,7 @@ public class HomeActivity extends Activity {
         if (focusedApp != null && focusedApp.pkg.equals(a.pkg)) {
             return;
         }
-        ui.postDelayed(heroSwitch, 450);
+        ui.postDelayed(heroSwitch, 600);
     }
 
     private void applyHeroApp(App a) {
@@ -650,7 +676,7 @@ public class HomeActivity extends Activity {
         focusedApp = a;
         heroItems = buildHeroItems(a);
         heroIdx = 0;
-        showHero(heroRoot != null && heroRoot.getAlpha() > 0 && heroContent.getVisibility() == View.VISIBLE);
+        showHero(heroRoot != null);
         // Restart the timer so the new app's first card is shown for a full interval.
         ui.removeCallbacks(rotate);
         ui.postDelayed(rotate, ROTATE_MS);
@@ -690,6 +716,7 @@ public class HomeActivity extends Activity {
             it.banner = a.banner;
             it.icon = a.icon;
             it.pending = c.getSessionActivity();
+            it.controller = c;
             it.intent = a.launch;
             out.add(it);
         }
@@ -737,7 +764,9 @@ public class HomeActivity extends Activity {
         base.banner = a.banner;
         base.icon = a.icon;
         base.intent = a.launch;
-        out.add(base);
+        if (out.isEmpty()) {
+            out.add(base);
+        }
         return out;
     }
 
@@ -965,63 +994,85 @@ public class HomeActivity extends Activity {
         return null;
     }
 
+    private void fillLayer(HeroLayer l, HeroItem it, int idx, int count) {
+        l.app.setText(it.appLabel == null ? "" : it.appLabel.toUpperCase());
+        l.title.setText(it.title);
+        l.sub.setText(it.subtitle);
+        if (it.art != null) {
+            l.art.setTag(null);
+            l.art.setImageBitmap(it.art);
+            l.art.setVisibility(View.VISIBLE);
+            l.side.setVisibility(View.GONE);
+        } else if (it.artUri != null) {
+            l.art.setImageDrawable(null);
+            l.art.setVisibility(View.VISIBLE);
+            l.side.setVisibility(View.GONE);
+            loadImage(it.artUri, l.art);
+        } else {
+            l.art.setImageDrawable(null);
+            l.art.setVisibility(View.GONE);
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) l.side.getLayoutParams();
+            if (it.banner != null) {
+                lp.width = dp(300);
+                lp.height = dp(169);
+                l.side.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                l.side.setImageDrawable(it.banner);
+            } else {
+                lp.width = dp(120);
+                lp.height = dp(120);
+                l.side.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                l.side.setImageDrawable(it.icon);
+            }
+            l.side.setLayoutParams(lp);
+            l.side.setVisibility(View.VISIBLE);
+        }
+        StringBuilder dots = new StringBuilder();
+        if (count > 1) {
+            for (int i = 0; i < count; i++) {
+                dots.append(i == idx ? "● " : "○ ");
+            }
+        }
+        l.dots.setText(dots.toString().trim());
+    }
+
     private void showHero(boolean animate) {
         if (heroRoot == null || heroItems.isEmpty()) {
             return;
         }
-        final HeroItem it = heroItems.get(Math.min(heroIdx, heroItems.size() - 1));
         final int count = heroItems.size();
         final int idx = Math.min(heroIdx, count - 1);
-        final Runnable apply = () -> {
-            heroApp.setText(it.appLabel == null ? "" : it.appLabel.toUpperCase());
-            heroTitle.setText(it.title);
-            heroSub.setText(it.subtitle);
-            if (it.art != null) {
-                heroArt.setTag(null);
-                heroArt.setImageBitmap(it.art);
-                heroArt.setVisibility(View.VISIBLE);
-                heroSide.setVisibility(View.GONE);
-            } else if (it.artUri != null) {
-                heroArt.setImageDrawable(null);
-                heroArt.setVisibility(View.VISIBLE);
-                heroSide.setVisibility(View.GONE);
-                loadImage(it.artUri, heroArt);
-            } else {
-                heroArt.setImageDrawable(null);
-                heroArt.setVisibility(View.GONE);
-                FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) heroSide.getLayoutParams();
-                if (it.banner != null) {
-                    lp.width = dp(300);
-                    lp.height = dp(169);
-                    heroSide.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                    heroSide.setImageDrawable(it.banner);
-                } else {
-                    lp.width = dp(120);
-                    lp.height = dp(120);
-                    heroSide.setScaleType(ImageView.ScaleType.FIT_CENTER);
-                    heroSide.setImageDrawable(it.icon);
-                }
-                heroSide.setLayoutParams(lp);
-                heroSide.setVisibility(View.VISIBLE);
-            }
-            StringBuilder dots = new StringBuilder();
-            if (count > 1) {
-                for (int i = 0; i < count; i++) {
-                    dots.append(i == idx ? "● " : "○ ");
-                }
-            }
-            heroDots.setText(dots.toString().trim());
-        };
+        final HeroItem it = heroItems.get(idx);
+
+        // Finish any crossfade still running so the two layers are in a known state.
+        heroFront.root.animate().cancel();
+        heroBack.root.animate().cancel();
+        if (heroFinish != null) {
+            heroFinish.run();
+            heroFinish = null;
+        }
         if (!animate) {
-            heroContent.animate().cancel();
-            heroContent.setAlpha(1f);
-            apply.run();
+            fillLayer(heroFront, it, idx, count);
+            heroFront.root.setAlpha(1f);
+            heroBack.root.setAlpha(0f);
             return;
         }
-        heroContent.animate().cancel();
-        heroContent.animate().alpha(0f).setDuration(140).withEndAction(() -> {
-            apply.run();
-            heroContent.animate().alpha(1f).setDuration(200).start();
+        // The new card fades in on top of the old one, so the background never shows through.
+        final HeroLayer incoming = heroBack;
+        final HeroLayer outgoing = heroFront;
+        fillLayer(incoming, it, idx, count);
+        incoming.root.setAlpha(0f);
+        incoming.root.bringToFront();
+        heroFinish = () -> {
+            incoming.root.setAlpha(1f);
+            outgoing.root.setAlpha(0f);
+            heroFront = incoming;
+            heroBack = outgoing;
+        };
+        incoming.root.animate().alpha(1f).setDuration(500).withEndAction(() -> {
+            if (heroFinish != null) {
+                heroFinish.run();
+                heroFinish = null;
+            }
         }).start();
     }
 
@@ -1030,6 +1081,10 @@ public class HomeActivity extends Activity {
     /** Brings the focused tile into view with a short eased animation instead of an instant jump. */
     private void ensureVisible(View cell) {
         if (cell.getHeight() == 0 || scroll == null || scroll.getChildCount() == 0) {
+            return;
+        }
+        if (cell == heroRoot || cell.getParent() == headerView) {
+            animateScroll(scroll, "scrollY", 0); // same position as pressing Home
             return;
         }
         View content = scroll.getChildAt(0);
@@ -1188,6 +1243,8 @@ public class HomeActivity extends Activity {
     }
 
     private void render(List<App> apps) {
+        // Hold the page height while it is rebuilt so the scroll position does not jump to the top.
+        grid.setMinimumHeight(grid.getHeight());
         grid.removeAllViews();
         tiles.clear();
         shownApps.clear();
@@ -1255,13 +1312,18 @@ public class HomeActivity extends Activity {
         View target = focusAfter != null ? tiles.get(focusAfter) : null;
         focusAfter = null;
         if (target != null) {
+            target.setScaleX(1.08f); // already enlarged: no "pop" on every step of a move
+            target.setScaleY(1.08f);
             target.requestFocus();
+            final View t = target;
+            grid.post(() -> ensureVisible(t));
         } else {
             scroll.scrollTo(0, 0);
             if (firstCell != null) {
                 firstCell.requestFocus();
             }
         }
+        grid.post(() -> grid.setMinimumHeight(0));
     }
 
     // ---------------------------------------------------------------- images
