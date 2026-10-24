@@ -59,13 +59,21 @@ public class PanelActivity extends Activity {
         bg.setCornerRadii(new float[]{dp(20), dp(20), 0, 0, 0, 0, dp(20), dp(20)});
         panel.setBackground(bg);
 
-        TextView title = new TextView(this);
-        title.setText("Quick settings");
-        title.setTextColor(th.text);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
-        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        title.setPadding(dp(4), 0, 0, dp(10));
-        panel.addView(title);
+        android.widget.TextClock clock = new android.widget.TextClock(this);
+        clock.setFormat12Hour("h:mm");
+        clock.setFormat24Hour("HH:mm");
+        clock.setTextColor(th.text);
+        clock.setTextSize(TypedValue.COMPLEX_UNIT_SP, 40);
+        clock.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
+        clock.setPadding(dp(4), 0, 0, 0);
+        panel.addView(clock);
+        android.widget.TextClock date = new android.widget.TextClock(this);
+        date.setFormat12Hour("EEEE, d MMMM");
+        date.setFormat24Hour("EEEE, d MMMM");
+        date.setTextColor(th.dim);
+        date.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        date.setPadding(dp(4), 0, 0, dp(18));
+        panel.addView(date);
 
         ScrollView sv = new ScrollView(this);
         sv.setVerticalScrollBarEnabled(false);
@@ -75,11 +83,11 @@ public class PanelActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setClipChildren(false);
         // Room above the first row so a focused (enlarged) circle is never cut off.
-        content.setPadding(0, dp(14), 0, dp(4));
+        content.setPadding(0, 0, 0, dp(4));
 
         boolean online = isOnline();
         final Object[][] orbs = {
-                {"Wi-Fi", online ? "Connected" : "Offline", Icons.WIFI, Settings.ACTION_WIFI_SETTINGS, online},
+                {"Wi-Fi", "", Icons.WIFI, Settings.ACTION_WIFI_SETTINGS, online},
                 {"Bluetooth", "", Icons.BLUETOOTH, Settings.ACTION_BLUETOOTH_SETTINGS, false},
                 {"Sound", "", Icons.SOUND, Settings.ACTION_SOUND_SETTINGS, false},
                 {"Display", "", Icons.DISPLAY, Settings.ACTION_DISPLAY_SETTINGS, false},
@@ -88,8 +96,8 @@ public class PanelActivity extends Activity {
                 {"Date & time", "", Icons.CLOCK, Settings.ACTION_DATE_SETTINGS, false},
                 {"Accounts", "", Icons.PERSON, Settings.ACTION_SYNC_SETTINGS, false},
                 {"All settings", "", Icons.GEAR, Settings.ACTION_SETTINGS, false},
-                {"TV Home", "Themes", Icons.SLIDERS, "app.tvhome.OPEN_SETTINGS", false}};
-        final int perRow = 4;
+                {"TV Home", "", Icons.SLIDERS, "app.tvhome.OPEN_SETTINGS", false}};
+        final int perRow = 5;
         LinearLayout row = null;
         for (int i = 0; i < orbs.length; i++) {
             if (i % perRow == 0) {
@@ -98,7 +106,7 @@ public class PanelActivity extends Activity {
                 row.setClipChildren(false);
                 LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                rlp.bottomMargin = dp(14);
+                rlp.bottomMargin = dp(12);
                 content.addView(row, rlp);
             }
             Object[] o = orbs[i];
@@ -116,7 +124,7 @@ public class PanelActivity extends Activity {
         TextView nt = new TextView(this);
         nt.setText("Notifications");
         nt.setTextColor(th.text);
-        nt.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        nt.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         nt.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         head.addView(nt, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         clearBtn = pill("Clear all");
@@ -150,7 +158,16 @@ public class PanelActivity extends Activity {
         diag.setText(info.toString());
         diag.setTextColor(th.dim);
         diag.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-        diag.setPadding(dp(4), dp(18), 0, 0);
+        diag.setPadding(dp(4), dp(8), 0, 0);
+        diag.setVisibility(View.GONE);
+        final TextView diagBtn = pill("Diagnostics");
+        diagBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        diagBtn.setOnClickListener(v -> diag.setVisibility(
+                diag.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE));
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        dlp.topMargin = dp(16);
+        content.addView(diagBtn, dlp);
         content.addView(diag);
 
         sv.addView(content);
@@ -164,7 +181,7 @@ public class PanelActivity extends Activity {
         setContentView(frame);
         Window window = getWindow();
         window.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        window.setLayout(dp(470), ViewGroup.LayoutParams.MATCH_PARENT);
+        window.setLayout(dp(520), ViewGroup.LayoutParams.MATCH_PARENT);
         window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
         window.setDimAmount(0.5f);
 
@@ -330,7 +347,7 @@ public class PanelActivity extends Activity {
                 Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
                 p.setStyle(Paint.Style.FILL);
                 int fill = on ? th.accent : th.pill;
-                p.setColor(f ? th.focusBg : fill);
+                p.setColor(fill);
                 float r = Math.min(w, h) / 2 - dp(4);
                 cv.drawCircle(w / 2, h / 2, r, p);
                 if (f) {
@@ -339,16 +356,16 @@ public class PanelActivity extends Activity {
                     p.setColor(th.ring);
                     cv.drawCircle(w / 2, h / 2, r + dp(2), p);
                 }
-                int ink = f ? th.focusText : (on ? Color.WHITE : th.text);
-                Icons.draw(cv, icon, w / 2, h / 2, r * 2f * 0.9f, ink, f ? th.focusBg : fill);
+                int ink = on ? Color.WHITE : th.text;
+                Icons.draw(cv, icon, w / 2, h / 2, r * 2f * 0.9f, ink, fill);
             }
         };
-        cell.addView(disc, new LinearLayout.LayoutParams(dp(64), dp(64)));
+        cell.addView(disc, new LinearLayout.LayoutParams(dp(56), dp(56)));
 
         final TextView name = new TextView(this);
         name.setText(label);
         name.setTextColor(th.text);
-        name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         name.setGravity(Gravity.CENTER);
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.END);

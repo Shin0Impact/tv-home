@@ -557,15 +557,20 @@ public class HomeActivity extends Activity {
             float h = getHeight();
             boolean f = isFocused();
             if (f) {
+                // Focus = a soft disc and a ring; the icon keeps its own colour so it never vanishes.
                 p.setStyle(Paint.Style.FILL);
-                p.setColor(th.focusBg);
-                cv.drawCircle(w / 2, h / 2, Math.min(w, h) / 2, p);
+                p.setColor(th.light ? 0x22000000 : 0x33FFFFFF);
+                cv.drawCircle(w / 2, h / 2, Math.min(w, h) / 2 - dp(2), p);
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(dp(2));
+                p.setColor(th.ring);
+                cv.drawCircle(w / 2, h / 2, Math.min(w, h) / 2 - dp(2), p);
             }
-            int color = f ? th.focusText : th.text;
+            int color = th.text;
             if (kind == WIFI && !online) {
                 color = th.dim;
             }
-            Icons.draw(cv, kind, w / 2, h / 2, Math.min(w, h), color, f ? th.focusBg : th.bgA);
+            Icons.draw(cv, kind, w / 2, h / 2, Math.min(w, h), color, th.bgA);
             if (badge) {
                 p.setStyle(Paint.Style.FILL);
                 p.setColor(0xFFFF4D4D);
