@@ -6,6 +6,8 @@
 
     <!-- Only used to download artwork that an app publishes for what it is playing (HTTPS only). -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Only to show the Wi-Fi icon in the top bar as connected or not. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Lets the hero read Android TV's Watch Next and apps' home-screen rows. Granted automatically. -->
     <uses-permission android:name="com.android.providers.tv.permission.READ_EPG_DATA" />
 

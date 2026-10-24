@@ -27,11 +27,13 @@ import android.widget.Toast;
 public class PanelActivity extends Activity {
 
     private float density;
+    private Theme th;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         density = getResources().getDisplayMetrics().density;
+        th = Theme.load(getSharedPreferences("home", MODE_PRIVATE));
 
         final String[] names = {
                 "Network & Internet", "Display", "Sound", "Bluetooth", "Keyboard",
@@ -47,13 +49,13 @@ public class PanelActivity extends Activity {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(28), dp(32), dp(28), dp(24));
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xF2121829);
+        bg.setColor(th.sheet);
         bg.setCornerRadii(new float[]{dp(24), dp(24), 0, 0, 0, 0, dp(24), dp(24)});
         panel.setBackground(bg);
 
         TextView title = new TextView(this);
         title.setText("Quick settings");
-        title.setTextColor(Color.WHITE);
+        title.setTextColor(th.text);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         title.setPadding(0, 0, 0, dp(16));
@@ -91,7 +93,7 @@ public class PanelActivity extends Activity {
             }
         }
         diag.setText(info.toString());
-        diag.setTextColor(0xFF9AA3B8);
+        diag.setTextColor(th.dim);
         diag.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         diag.setPadding(dp(4), dp(12), 0, 0);
         panel.addView(diag);
@@ -132,17 +134,17 @@ public class PanelActivity extends Activity {
         final TextView t = new TextView(this);
         t.setText(text);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
-        t.setTextColor(Color.WHITE);
+        t.setTextColor(th.text);
         t.setPadding(dp(22), dp(10), dp(22), dp(10));
         t.setFocusable(true);
         t.setClickable(true);
         final GradientDrawable bg = new GradientDrawable();
         bg.setCornerRadius(dp(24));
-        bg.setColor(0xFF232B42);
+        bg.setColor(th.pill);
         t.setBackground(bg);
         t.setOnFocusChangeListener((View v, boolean focused) -> {
-            bg.setColor(focused ? Color.WHITE : 0xFF232B42);
-            t.setTextColor(focused ? 0xFF0A0E1A : Color.WHITE);
+            bg.setColor(focused ? th.focusBg : th.pill);
+            t.setTextColor(focused ? th.focusText : th.text);
         });
         return t;
     }

@@ -1,6 +1,8 @@
 package app.tvhome;
 
+import android.animation.ArgbEvaluator;
 import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
@@ -13,6 +15,9 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.database.Cursor;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Outline;
@@ -25,6 +30,9 @@ import android.media.tv.TvContract;
 import android.media.session.MediaController;
 import android.media.session.MediaSessionManager;
 import android.media.session.PlaybackState;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -90,11 +98,6 @@ public class HomeActivity extends Activity {
     private static final int HISTORY_PER_APP = 4;
     private static final int HISTORY_TOTAL = 40;
 
-    private static final int CARD_COLOR = 0xFF1C2338;
-    private static final int PILL_COLOR = 0xFF232B42;
-    private static final int TEXT_DIM = 0xFF9AA3B8;
-    private static final int INK = 0xFF0A0E1A;
-    private static final int ACCENT = 0xFF4C8DFF;
 
     private static class App {
         String pkg;
@@ -118,15 +121,18 @@ public class HomeActivity extends Activity {
         Intent intent;
     }
 
-    /** One of two stacked views of the hero, so one can fade in over the other with no gap. */
-    private static class HeroLayer {
+    /** One card of the hero carousel. Five of them take turns at the positions -2 .. +2. */
+    private static class Slot {
         FrameLayout root;
         ImageView art;
         ImageView side;
         TextView app;
         TextView title;
         TextView sub;
-        TextView dots;
+        /** Position relative to the centre card: 0 is the big one, -1 and 1 its neighbours. */
+        int rel;
+        /** What the pictures currently show, so a refresh does not reload them. */
+        String key = "";
     }
 
     private static class VScroll extends ScrollView {
@@ -178,6 +184,11 @@ public class HomeActivity extends Activity {
     private int topW;
     private int gridW;
     private int heroH;
+    private int pad;
+    private int cardW;
+    private int cardH;
+    private Theme th;
+    private IconButton wifiBtn;
     private ScrollView scroll;
     private LinearLayout grid;
     private View headerView;
@@ -192,13 +203,18 @@ public class HomeActivity extends Activity {
     private String lastKey = "";
     private Dialog openDialog;
 
-    // Hero views.
+    // Hero carousel.
     private FrameLayout heroRoot;
-    private HeroLayer heroFront;
-    private HeroLayer heroBack;
-    private Runnable heroFinish;
+    private Slot[] slots;
+    private View heroRing;
     private App focusedApp;
     private int heroIdx;
+    private String stageApp;
+    private int stageIdx = -1;
+    private int stageN;
+    private GradientDrawable bgDrawable;
+    private ValueAnimator tintAnim;
+    private int tintColor;
 
     // Move mode: the app being repositioned, and the app to focus after the next rebuild.
     private String moveApp;
@@ -232,14 +248,17 @@ public class HomeActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences("home", MODE_PRIVATE);
+        th = Theme.load(prefs);
         density = getResources().getDisplayMetrics().density;
         int screenW = getResources().getDisplayMetrics().widthPixels;
-        int pad = dp(64);
+        pad = dp(64);
         gap = dp(16);
         int avail = screenW - 2 * pad;
-        topW = (avail - (TOP_ROW - 1) * gap) / TOP_ROW;
+        topW = (avail - 2 * dp(20) - (TOP_ROW - 1) * gap) / TOP_ROW;
         gridW = (avail - (GRID_COLS - 1) * gap) / GRID_COLS;
-        heroH = dp(210);
+        cardW = dp(420);
+        cardH = cardW * 9 / 16;
+        heroH = cardH;
         setContentView(buildRoot(pad));
     }
 
@@ -248,6 +267,10 @@ public class HomeActivity extends Activity {
         super.onResume();
         onScreen = true;
         visible = this;
+        if (wifiBtn != null) {
+            wifiBtn.online = isOnline();
+            wifiBtn.invalidate();
+        }
         refresh(false);
         loadPrograms();
         recordHistoryAsync();
@@ -366,42 +389,23 @@ public class HomeActivity extends Activity {
 
     private View buildRoot(int pad) {
         FrameLayout root = new FrameLayout(this);
-        root.setBackground(new GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                new int[]{0xFF0A0E1A, 0xFF141B30, 0xFF0A0E1A}));
+        bgDrawable = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{th.bgA, th.bgB, th.bgC});
+        root.setBackground(bgDrawable);
+        tintColor = 0;
 
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
         column.setClipChildren(false);
         column.setClipToPadding(false);
 
-        // The header scrolls with the content (it is the first child of the grid), so it never
+        // The top bar scrolls with the content (it is the first child of the grid), so it never
         // shows through behind the tiles.
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(0, dp(32), 0, dp(8));
+        header.setPadding(0, dp(24), 0, dp(4));
         headerView = header;
-
-        LinearLayout clockBox = new LinearLayout(this);
-        clockBox.setOrientation(LinearLayout.VERTICAL);
-
-        TextClock time = new TextClock(this);
-        time.setFormat12Hour("h:mm");
-        time.setFormat24Hour("HH:mm");
-        time.setTextColor(Color.WHITE);
-        time.setTextSize(TypedValue.COMPLEX_UNIT_SP, 40);
-        time.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
-        clockBox.addView(time);
-
-        TextClock date = new TextClock(this);
-        date.setFormat12Hour("EEEE, d MMMM");
-        date.setFormat24Hour("EEEE, d MMMM");
-        date.setTextColor(TEXT_DIM);
-        date.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-        clockBox.addView(date);
-
-        header.addView(clockBox, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         unhideBtn = pill("Show hidden");
         unhideBtn.setVisibility(View.GONE);
@@ -409,11 +413,36 @@ public class HomeActivity extends Activity {
             prefs.edit().remove("hidden").apply();
             refresh(true);
         });
-        header.addView(unhideBtn, pillParams());
+        header.addView(unhideBtn, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        TextView settingsBtn = pill("Settings");
-        settingsBtn.setOnClickListener(v -> showQuickSettings());
-        header.addView(settingsBtn, pillParams());
+        View spacer = new View(this);
+        header.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
+
+        TextClock time = new TextClock(this);
+        time.setFormat12Hour("h:mm");
+        time.setFormat24Hour("HH:mm");
+        time.setTextColor(th.text);
+        time.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+        time.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        LinearLayout.LayoutParams timeLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        timeLp.rightMargin = dp(14);
+        header.addView(time, timeLp);
+
+        IconButton wifi = new IconButton(this, IconButton.WIFI);
+        wifi.setFocusable(false);
+        wifi.online = isOnline();
+        wifiBtn = wifi;
+        header.addView(wifi, iconParams());
+
+        IconButton gear = new IconButton(this, IconButton.GEAR);
+        gear.setOnClickListener(v -> showQuickSettings());
+        header.addView(gear, iconParams());
+
+        IconButton sliders = new IconButton(this, IconButton.SLIDERS);
+        sliders.setOnClickListener(v -> showHomeSettings(0));
+        header.addView(sliders, iconParams());
 
         scroll = new VScroll(this);
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
@@ -439,6 +468,114 @@ public class HomeActivity extends Activity {
         return root;
     }
 
+    private LinearLayout.LayoutParams iconParams() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(44), dp(44));
+        lp.leftMargin = dp(6);
+        return lp;
+    }
+
+    private boolean isOnline() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            Network n = cm.getActiveNetwork();
+            NetworkCapabilities c = n == null ? null : cm.getNetworkCapabilities(n);
+            return c != null && c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        } catch (Exception e) {
+            return true; // cannot tell: show it as connected
+        }
+    }
+
+    /** A round icon button drawn in code: Wi-Fi (not focusable), settings gear, or sliders. */
+    private class IconButton extends View {
+        static final int WIFI = 0;
+        static final int GEAR = 1;
+        static final int SLIDERS = 2;
+
+        private final int kind;
+        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF r = new RectF();
+        boolean online = true;
+
+        IconButton(Context c, int kind) {
+            super(c);
+            this.kind = kind;
+            setFocusable(true);
+            setClickable(true);
+            setOnFocusChangeListener((v, focused) -> {
+                invalidate();
+                if (focused) {
+                    ensureVisible(v);
+                }
+            });
+        }
+
+        @Override
+        protected void onDraw(Canvas cv) {
+            float w = getWidth();
+            float h = getHeight();
+            boolean f = isFocused();
+            if (f) {
+                p.setStyle(Paint.Style.FILL);
+                p.setColor(th.focusBg);
+                cv.drawCircle(w / 2, h / 2, Math.min(w, h) / 2, p);
+            }
+            int color = f ? th.focusText : th.text;
+            if (kind == WIFI && !online) {
+                color = th.dim;
+            }
+            p.setColor(color);
+            float s = Math.min(w, h);
+            float cx = w / 2;
+            float cy = h / 2;
+            p.setStrokeCap(Paint.Cap.ROUND);
+            if (kind == WIFI) {
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(s * 0.07f);
+                float by = cy + s * 0.2f;
+                for (int i = 1; i <= 3; i++) {
+                    float rad = s * 0.13f * i;
+                    r.set(cx - rad, by - rad, cx + rad, by + rad);
+                    cv.drawArc(r, 225, 90, false, p);
+                }
+                p.setStyle(Paint.Style.FILL);
+                cv.drawCircle(cx, by, s * 0.045f, p);
+            } else if (kind == GEAR) {
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(s * 0.09f);
+                cv.drawCircle(cx, cy, s * 0.17f, p);
+                p.setStyle(Paint.Style.FILL);
+                for (int i = 0; i < 8; i++) {
+                    cv.save();
+                    cv.rotate(i * 45f, cx, cy);
+                    r.set(cx - s * 0.055f, cy - s * 0.31f, cx + s * 0.055f, cy - s * 0.2f);
+                    cv.drawRoundRect(r, s * 0.03f, s * 0.03f, p);
+                    cv.restore();
+                }
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(s * 0.07f);
+                cv.drawCircle(cx, cy, s * 0.235f, p);
+            } else {
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(s * 0.06f);
+                float[] ys = {cy - s * 0.2f, cy, cy + s * 0.2f};
+                float[] knobs = {cx + s * 0.1f, cx - s * 0.1f, cx + s * 0.04f};
+                for (int i = 0; i < 3; i++) {
+                    cv.drawLine(cx - s * 0.3f, ys[i], cx + s * 0.3f, ys[i], p);
+                }
+                p.setStyle(Paint.Style.FILL);
+                for (int i = 0; i < 3; i++) {
+                    p.setColor(f ? th.focusBg : th.bgA);
+                    cv.drawCircle(knobs[i], ys[i], s * 0.085f, p);
+                    p.setColor(color);
+                    p.setStyle(Paint.Style.STROKE);
+                    p.setStrokeWidth(s * 0.055f);
+                    cv.drawCircle(knobs[i], ys[i], s * 0.075f, p);
+                    p.setStyle(Paint.Style.FILL);
+                }
+            }
+        }
+    }
+
     private LinearLayout.LayoutParams pillParams() {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -450,17 +587,17 @@ public class HomeActivity extends Activity {
         final TextView t = new TextView(this);
         t.setText(text);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        t.setTextColor(Color.WHITE);
+        t.setTextColor(th.text);
         t.setPadding(dp(22), dp(10), dp(22), dp(10));
         t.setFocusable(true);
         t.setClickable(true);
         final GradientDrawable bg = new GradientDrawable();
         bg.setCornerRadius(dp(24));
-        bg.setColor(PILL_COLOR);
+        bg.setColor(th.pill);
         t.setBackground(bg);
         t.setOnFocusChangeListener((v, focused) -> {
-            bg.setColor(focused ? Color.WHITE : PILL_COLOR);
-            t.setTextColor(focused ? INK : Color.WHITE);
+            bg.setColor(focused ? th.focusBg : th.pill);
+            t.setTextColor(focused ? th.focusText : th.text);
         });
         return t;
     }
@@ -498,7 +635,7 @@ public class HomeActivity extends Activity {
         final float radius = dp(16);
         final FrameLayout card = new FrameLayout(this);
         GradientDrawable cardBg = new GradientDrawable();
-        cardBg.setColor(CARD_COLOR);
+        cardBg.setColor(th.card);
         cardBg.setCornerRadius(radius);
         card.setBackground(cardBg);
         card.setClipToOutline(true);
@@ -521,7 +658,7 @@ public class HomeActivity extends Activity {
         final TextView label = new TextView(this);
         label.setText(text);
         label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        label.setTextColor(TEXT_DIM);
+        label.setTextColor(th.dim);
         label.setSingleLine(true);
         label.setEllipsize(TextUtils.TruncateAt.END);
         label.setPadding(dp(2), dp(8), dp(2), 0);
@@ -530,11 +667,11 @@ public class HomeActivity extends Activity {
         final GradientDrawable ring = new GradientDrawable();
         ring.setColor(Color.TRANSPARENT);
         ring.setCornerRadius(Math.max(0f, radius - dp(accent ? 4 : 3) / 2f));
-        ring.setStroke(dp(accent ? 4 : 3), accent ? ACCENT : Color.WHITE);
+        ring.setStroke(dp(accent ? 4 : 3), accent ? th.accent : th.ring);
 
         cell.setOnFocusChangeListener((v, focused) -> {
             card.setForeground(focused ? ring : null);
-            label.setTextColor(focused ? Color.WHITE : TEXT_DIM);
+            label.setTextColor(focused ? th.text : th.dim);
             float s = focused ? 1.08f : 1f;
             v.animate().scaleX(s).scaleY(s).setDuration(110).start();
             if (focused) {
@@ -565,9 +702,16 @@ public class HomeActivity extends Activity {
 
     // ------------------------------------------------------------------ hero
 
-    private HeroLayer makeHeroLayer() {
-        HeroLayer l = new HeroLayer();
+    private Slot makeSlot() {
+        Slot l = new Slot();
         l.root = new FrameLayout(this);
+        final float radius = dp(20);
+        GradientDrawable bg = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR, new int[]{th.card, Theme.mix(th.card, 0xFF000000, 0.35f)});
+        bg.setCornerRadius(radius);
+        l.root.setBackground(bg);
+        l.root.setClipToOutline(true);
+        l.root.setOutlineProvider(rounded(radius));
 
         l.art = new ImageView(this);
         l.art.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -576,58 +720,48 @@ public class HomeActivity extends Activity {
 
         View scrim = new View(this);
         scrim.setBackground(new GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT, new int[]{0xE6000000, 0x66000000, 0x00000000}));
+                GradientDrawable.Orientation.BOTTOM_TOP, new int[]{0xDD000000, 0x66000000, 0x00000000}));
         l.root.addView(scrim, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                ViewGroup.LayoutParams.MATCH_PARENT, cardH * 3 / 5, Gravity.BOTTOM));
 
         l.side = new ImageView(this);
         l.side.setClipToOutline(true);
-        l.side.setOutlineProvider(rounded(dp(14)));
-        FrameLayout.LayoutParams sideLp = new FrameLayout.LayoutParams(dp(300), dp(169),
-                Gravity.END | Gravity.CENTER_VERTICAL);
-        sideLp.rightMargin = dp(40);
+        l.side.setOutlineProvider(rounded(dp(12)));
+        FrameLayout.LayoutParams sideLp = new FrameLayout.LayoutParams(dp(200), dp(112),
+                Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        sideLp.topMargin = dp(20);
         l.root.addView(l.side, sideLp);
 
         LinearLayout text = new LinearLayout(this);
         text.setOrientation(LinearLayout.VERTICAL);
         text.setGravity(Gravity.BOTTOM);
-        text.setPadding(dp(36), dp(24), dp(36), dp(28));
+        text.setPadding(dp(18), dp(12), dp(18), dp(16));
 
         l.app = new TextView(this);
-        l.app.setTextColor(0xFFB6BED2);
-        l.app.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        l.app.setTextColor(0xFFC3CADB);
+        l.app.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         l.app.setLetterSpacing(0.12f);
+        l.app.setSingleLine(true);
         text.addView(l.app);
 
         l.title = new TextView(this);
         l.title.setTextColor(Color.WHITE);
-        l.title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 30);
+        l.title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
         l.title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         l.title.setSingleLine(true);
         l.title.setEllipsize(TextUtils.TruncateAt.END);
-        l.title.setPadding(0, dp(4), dp(340), 0);
+        l.title.setPadding(0, dp(2), 0, 0);
         text.addView(l.title);
 
         l.sub = new TextView(this);
-        l.sub.setTextColor(0xFFC3CADB);
-        l.sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        l.sub.setTextColor(0xFFD3D9E6);
+        l.sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         l.sub.setSingleLine(true);
         l.sub.setEllipsize(TextUtils.TruncateAt.END);
-        l.sub.setPadding(0, dp(2), dp(340), 0);
         text.addView(l.sub);
 
         l.root.addView(text, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
-        l.dots = new TextView(this);
-        l.dots.setTextColor(Color.WHITE);
-        l.dots.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        FrameLayout.LayoutParams dotsLp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM | Gravity.END);
-        dotsLp.rightMargin = dp(24);
-        dotsLp.bottomMargin = dp(16);
-        l.root.addView(l.dots, dotsLp);
         return l;
     }
 
@@ -635,36 +769,240 @@ public class HomeActivity extends Activity {
         heroRoot = new FrameLayout(this);
         heroRoot.setFocusable(true);
         heroRoot.setClickable(true);
-        final float radius = dp(24);
-        GradientDrawable bg = new GradientDrawable(
-                GradientDrawable.Orientation.TL_BR, new int[]{0xFF26304D, 0xFF121829});
-        bg.setCornerRadius(radius);
-        heroRoot.setBackground(bg);
-        heroRoot.setClipToOutline(true);
-        heroRoot.setOutlineProvider(rounded(radius));
+        heroRoot.setClipChildren(false);
+        heroRoot.setClipToPadding(false);
 
-        heroFront = makeHeroLayer();
-        heroBack = makeHeroLayer();
-        heroRoot.addView(heroBack.root, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        heroRoot.addView(heroFront.root, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        heroBack.root.setAlpha(0f);
+        slots = new Slot[5];
+        for (int i = 0; i < slots.length; i++) {
+            slots[i] = makeSlot();
+            slots[i].rel = i - 2;
+            heroRoot.addView(slots[i].root, new FrameLayout.LayoutParams(cardW, cardH,
+                    Gravity.TOP | Gravity.CENTER_HORIZONTAL));
+            applyRel(slots[i], false);
+        }
 
+        heroRing = new View(this);
         final GradientDrawable ring = new GradientDrawable();
         ring.setColor(Color.TRANSPARENT);
-        ring.setCornerRadius(Math.max(0f, radius - dp(3) / 2f));
-        ring.setStroke(dp(3), Color.WHITE);
+        ring.setCornerRadius(dp(20));
+        ring.setStroke(dp(3), th.ring);
+        heroRing.setBackground(ring);
+        heroRing.setVisibility(View.INVISIBLE);
+        heroRoot.addView(heroRing, new FrameLayout.LayoutParams(cardW, cardH,
+                Gravity.TOP | Gravity.CENTER_HORIZONTAL));
+
         heroRoot.setOnFocusChangeListener((v, focused) -> {
-            heroRoot.setForeground(focused ? ring : null);
-            float s = focused ? 1.02f : 1f;
-            v.animate().scaleX(s).scaleY(s).setDuration(110).start();
+            heroRing.setVisibility(focused ? View.VISIBLE : View.INVISIBLE);
             if (focused) {
                 ensureVisible(v);
             }
         });
         heroRoot.setOnClickListener(v -> openHeroItem());
         return heroRoot;
+    }
+
+    /** Where a card sits for a given relative position: centre, left/right neighbour, or off-screen. */
+    private void applyRel(Slot s, boolean animate) {
+        final float side = 0.82f;
+        float dx1 = cardW * (0.5f + 0.5f * side) + dp(24);
+        float dx2 = dx1 + cardW * side + dp(24);
+        int a = Math.abs(s.rel);
+        float tx = a == 0 ? 0f : (a == 1 ? dx1 : dx2) * Integer.signum(s.rel);
+        float sc = a == 0 ? 1f : side;
+        int n = heroItems == null ? 0 : heroItems.size();
+        boolean visible;
+        if (a == 0) {
+            visible = n > 0;
+        } else if (a == 1) {
+            visible = n >= 3 || (n == 2 && s.rel == 1);
+        } else {
+            visible = false;
+        }
+        float al = visible ? (a == 0 ? 1f : 0.8f) : 0f;
+        if (animate) {
+            s.root.animate().translationX(tx).scaleX(sc).scaleY(sc).alpha(al)
+                    .setDuration(340).setInterpolator(new DecelerateInterpolator()).start();
+        } else {
+            s.root.animate().cancel();
+            s.root.setTranslationX(tx);
+            s.root.setScaleX(sc);
+            s.root.setScaleY(sc);
+            s.root.setAlpha(al);
+        }
+    }
+
+    private void bindSlot(Slot s, int itemIdx) {
+        int n = heroItems.size();
+        if (n == 0) {
+            return;
+        }
+        HeroItem it = heroItems.get(((itemIdx % n) + n) % n);
+        s.app.setText(it.appLabel == null ? "" : it.appLabel.toUpperCase());
+        s.title.setText(it.title);
+        s.sub.setText(it.subtitle);
+        String key = it.art != null ? "bmp" + System.identityHashCode(it.art)
+                : (it.artUri != null ? "uri" + it.artUri : "none" + System.identityHashCode(it.banner));
+        if (key.equals(s.key)) {
+            return;
+        }
+        s.key = key;
+        if (it.art != null) {
+            s.art.setTag(null);
+            s.art.setImageBitmap(it.art);
+            s.art.setVisibility(View.VISIBLE);
+            s.side.setVisibility(View.GONE);
+        } else if (it.artUri != null) {
+            s.art.setImageDrawable(null);
+            s.art.setVisibility(View.VISIBLE);
+            s.side.setVisibility(View.GONE);
+            loadImage(it.artUri, s.art);
+        } else {
+            s.art.setTag(null);
+            s.art.setImageDrawable(null);
+            s.art.setVisibility(View.GONE);
+            if (it.banner != null) {
+                s.side.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                s.side.setImageDrawable(it.banner);
+            } else {
+                s.side.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                s.side.setImageDrawable(it.icon);
+            }
+            s.side.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void showHero(boolean animate) {
+        if (heroRoot == null || slots == null || heroItems.isEmpty()) {
+            return;
+        }
+        final int n = heroItems.size();
+        heroIdx = Math.min(heroIdx, n - 1);
+        final int idx = heroIdx;
+        boolean sameApp = focusedApp != null && focusedApp.pkg.equals(stageApp);
+        if (animate && sameApp && stageIdx >= 0 && stageN == n && n >= 2 && idx != stageIdx) {
+            int delta = ((idx - stageIdx) % n + n) % n;
+            int dir = (delta == 1 || (n == 2)) ? 1 : (delta == n - 1 ? -1 : 0);
+            if (dir != 0) {
+                for (Slot s : slots) {
+                    s.rel -= dir;
+                    if (Math.abs(s.rel) > 2) {
+                        // This card slid out of range: it comes back in at the far side, unseen.
+                        s.rel = dir > 0 ? 2 : -2;
+                        bindSlot(s, idx + s.rel);
+                        applyRel(s, false);
+                    }
+                }
+                for (Slot s : slots) {
+                    bindSlot(s, idx + s.rel);
+                    applyRel(s, true);
+                }
+                stageIdx = idx;
+                restack();
+                updateTint();
+                return;
+            }
+        }
+        // A new app, a new list, or a jump of more than one card: set every position directly.
+        for (int i = 0; i < slots.length; i++) {
+            slots[i].rel = i - 2;
+            bindSlot(slots[i], idx + slots[i].rel);
+            applyRel(slots[i], false);
+        }
+        if (animate && !sameApp) {
+            heroRoot.setAlpha(0f);
+            heroRoot.animate().alpha(1f).setDuration(260).start();
+        } else {
+            heroRoot.animate().cancel();
+            heroRoot.setAlpha(1f);
+        }
+        stageApp = focusedApp == null ? null : focusedApp.pkg;
+        stageIdx = idx;
+        stageN = n;
+        restack();
+        updateTint();
+    }
+
+    /** Keeps the centre card on top of its neighbours, and the focus ring on top of that. */
+    private void restack() {
+        for (Slot s : slots) {
+            if (s.rel == 0) {
+                s.root.bringToFront();
+            }
+        }
+        heroRing.bringToFront();
+    }
+
+    /** Hero art theme: lets the background take the colour of the card in focus. */
+    private void updateTint() {
+        if (!Theme.ART.equals(th.mode) || heroItems.isEmpty() || bgDrawable == null) {
+            return;
+        }
+        final HeroItem it = heroItems.get(Math.min(heroIdx, heroItems.size() - 1));
+        if (it.art != null) {
+            tintTo(averageColor(it.art));
+        } else if (it.artUri != null) {
+            Bitmap cached = imageCache.get(it.artUri);
+            if (cached != null) {
+                tintTo(averageColor(cached));
+            }
+            // otherwise the loader calls maybeTint once the picture has arrived
+        } else {
+            tintTo(0);
+        }
+    }
+
+    /** A picture finished loading: if it belongs to the card in focus, the background follows it. */
+    private void maybeTint(String uri, Bitmap b) {
+        if (!Theme.ART.equals(th.mode) || heroItems.isEmpty()) {
+            return;
+        }
+        HeroItem it = heroItems.get(Math.min(heroIdx, heroItems.size() - 1));
+        if (it.art == null && uri.equals(it.artUri)) {
+            tintTo(averageColor(b));
+        }
+    }
+
+    private int averageColor(Bitmap b) {
+        try {
+            Bitmap small = Bitmap.createScaledBitmap(b, 8, 8, true);
+            long r = 0;
+            long g = 0;
+            long bl = 0;
+            for (int y = 0; y < 8; y++) {
+                for (int x = 0; x < 8; x++) {
+                    int c = small.getPixel(x, y);
+                    r += (c >> 16) & 0xFF;
+                    g += (c >> 8) & 0xFF;
+                    bl += c & 0xFF;
+                }
+            }
+            return 0xFF000000 | ((int) (r / 64) << 16) | ((int) (g / 64) << 8) | (int) (bl / 64);
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private void tintTo(final int color) {
+        if (bgDrawable == null || color == tintColor) {
+            return;
+        }
+        final int[] from = tintColor == 0 ? new int[]{th.bgA, th.bgB, th.bgC} : Theme.artBackground(tintColor);
+        final int[] to = color == 0 ? new int[]{th.bgA, th.bgB, th.bgC} : Theme.artBackground(color);
+        tintColor = color;
+        if (tintAnim != null) {
+            tintAnim.cancel();
+        }
+        final ArgbEvaluator ev = new ArgbEvaluator();
+        tintAnim = ValueAnimator.ofFloat(0f, 1f);
+        tintAnim.setDuration(500);
+        tintAnim.addUpdateListener(a -> {
+            float t = (Float) a.getAnimatedValue();
+            bgDrawable.setColors(new int[]{
+                    (Integer) ev.evaluate(t, from[0], to[0]),
+                    (Integer) ev.evaluate(t, from[1], to[1]),
+                    (Integer) ev.evaluate(t, from[2], to[2])});
+        });
+        tintAnim.start();
     }
 
     private void resumeNow(MediaController mc) {
@@ -1074,90 +1412,6 @@ public class HomeActivity extends Activity {
         return null;
     }
 
-    private void fillLayer(HeroLayer l, HeroItem it, int idx, int count) {
-        l.app.setText(it.appLabel == null ? "" : it.appLabel.toUpperCase());
-        l.title.setText(it.title);
-        l.sub.setText(it.subtitle);
-        if (it.art != null) {
-            l.art.setTag(null);
-            l.art.setImageBitmap(it.art);
-            l.art.setVisibility(View.VISIBLE);
-            l.side.setVisibility(View.GONE);
-        } else if (it.artUri != null) {
-            l.art.setImageDrawable(null);
-            l.art.setVisibility(View.VISIBLE);
-            l.side.setVisibility(View.GONE);
-            loadImage(it.artUri, l.art);
-        } else {
-            l.art.setImageDrawable(null);
-            l.art.setVisibility(View.GONE);
-            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) l.side.getLayoutParams();
-            if (it.banner != null) {
-                lp.width = dp(300);
-                lp.height = dp(169);
-                l.side.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                l.side.setImageDrawable(it.banner);
-            } else {
-                lp.width = dp(120);
-                lp.height = dp(120);
-                l.side.setScaleType(ImageView.ScaleType.FIT_CENTER);
-                l.side.setImageDrawable(it.icon);
-            }
-            l.side.setLayoutParams(lp);
-            l.side.setVisibility(View.VISIBLE);
-        }
-        StringBuilder dots = new StringBuilder();
-        if (count > 1) {
-            for (int i = 0; i < count; i++) {
-                dots.append(i == idx ? "● " : "○ ");
-            }
-        }
-        l.dots.setText(dots.toString().trim());
-    }
-
-    private void showHero(boolean animate) {
-        if (heroRoot == null || heroItems.isEmpty()) {
-            return;
-        }
-        final int count = heroItems.size();
-        final int idx = Math.min(heroIdx, count - 1);
-        final HeroItem it = heroItems.get(idx);
-
-        // Finish any crossfade still running so the two layers are in a known state.
-        heroFront.root.animate().cancel();
-        heroBack.root.animate().cancel();
-        if (heroFinish != null) {
-            heroFinish.run();
-            heroFinish = null;
-        }
-        if (!animate) {
-            fillLayer(heroFront, it, idx, count);
-            heroFront.root.setAlpha(1f);
-            heroBack.root.setAlpha(0f);
-            return;
-        }
-        // The new card fades in on top of the old one, so the background never shows through.
-        final HeroLayer incoming = heroBack;
-        final HeroLayer outgoing = heroFront;
-        fillLayer(incoming, it, idx, count);
-        incoming.root.setAlpha(0f);
-        incoming.root.bringToFront();
-        heroFinish = () -> {
-            incoming.root.setAlpha(1f);
-            outgoing.root.setAlpha(0f);
-            heroFront = incoming;
-            heroBack = outgoing;
-        };
-        incoming.root.animate().alpha(1f).setDuration(500).withEndAction(() -> {
-            if (heroFinish != null) {
-                heroFinish.run();
-                heroFinish = null;
-            }
-        }).start();
-    }
-
-    // -------------------------------------------------------------- scrolling
-
     /** Brings the focused tile into view with a short eased animation instead of an instant jump. */
     private void ensureVisible(View cell) {
         if (cell.getHeight() == 0 || scroll == null || scroll.getChildCount() == 0) {
@@ -1389,26 +1643,46 @@ public class HomeActivity extends Activity {
         if (heroRoot == null) {
             buildHero();
         }
+        // The carousel is as wide as the screen so the neighbouring cards can peek in from the sides.
         LinearLayout.LayoutParams heroLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, heroH);
         heroLp.topMargin = dp(8);
-        heroLp.bottomMargin = dp(24);
+        heroLp.bottomMargin = dp(22);
+        heroLp.leftMargin = -pad;
+        heroLp.rightMargin = -pad;
         grid.addView(heroRoot, heroLp);
 
         int topCount = Math.min(TOP_ROW, apps.size());
         if (topCount > 0) {
+            // The first row sits on a rounded panel.
+            LinearLayout panel = new LinearLayout(this);
+            panel.setOrientation(LinearLayout.VERTICAL);
+            panel.setClipChildren(false);
+            panel.setClipToPadding(false);
+            panel.setPadding(dp(20), dp(18), dp(20), dp(10));
+            GradientDrawable panelBg = new GradientDrawable();
+            panelBg.setColor(th.panel);
+            panelBg.setCornerRadius(dp(28));
+            panel.setBackground(panelBg);
+
             LinearLayout top = newRow();
             for (int i = 0; i < topCount; i++) {
                 View cell = makeAppTile(apps.get(i), topW);
-                top.addView(cell, cellParams(topW));
+                LinearLayout.LayoutParams cp = cellParams(topW);
+                if (i == topCount - 1) {
+                    cp.rightMargin = 0;
+                }
+                top.addView(cell, cp);
                 if (firstCell == null) {
                     firstCell = cell;
                 }
             }
+            panel.addView(top, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             LinearLayout.LayoutParams topLp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            topLp.bottomMargin = dp(18);
-            grid.addView(top, topLp);
+            topLp.bottomMargin = dp(22);
+            grid.addView(panel, topLp);
         }
 
 
@@ -1440,6 +1714,8 @@ public class HomeActivity extends Activity {
         }
         if (focusedApp == null && !apps.isEmpty()) {
             applyHeroApp(apps.get(0));
+        } else if (stageApp == null) {
+            showHero(false); // the screen was rebuilt (a new theme): draw the cards again
         }
 
         String want = focusAfter != null ? focusAfter : lastFocusPkg;
@@ -1485,6 +1761,7 @@ public class HomeActivity extends Activity {
                 if (uri.equals(target.getTag())) {
                     target.setImageBitmap(b);
                 }
+                maybeTint(uri, b);
             });
         });
     }
@@ -1664,13 +1941,13 @@ public class HomeActivity extends Activity {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(28), dp(32), dp(28), dp(24));
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xF2121829);
+        bg.setColor(th.sheet);
         bg.setCornerRadii(new float[]{dp(24), dp(24), 0, 0, 0, 0, dp(24), dp(24)});
         panel.setBackground(bg);
 
         TextView title = new TextView(this);
         title.setText("Quick settings");
-        title.setTextColor(Color.WHITE);
+        title.setTextColor(th.text);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         title.setPadding(0, 0, 0, dp(16));
@@ -1715,6 +1992,116 @@ public class HomeActivity extends Activity {
             window.setDimAmount(0.55f);
             window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
         }
+    }
+
+    /** Rebuilds the whole screen with the colours of the chosen theme. */
+    private void applyTheme() {
+        th = Theme.load(prefs);
+        if (tintAnim != null) {
+            tintAnim.cancel();
+        }
+        heroRoot = null;
+        slots = null;
+        heroRing = null;
+        stageApp = null;
+        stageIdx = -1;
+        stageN = 0;
+        firstCell = null;
+        tiles.clear();
+        scrollAnims.clear();
+        setContentView(buildRoot(pad));
+        refresh(true);
+    }
+
+    /** TV Home's own settings (opened by the sliders icon): theme, accent colour, hidden apps, order. */
+    private void showHomeSettings(final int focusRow) {
+        dismissDialog();
+        final Dialog d = new Dialog(this, android.R.style.Theme_Material_NoActionBar);
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(28), dp(32), dp(28), dp(24));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(th.sheet);
+        bg.setCornerRadii(new float[]{dp(24), dp(24), 0, 0, 0, 0, dp(24), dp(24)});
+        panel.setBackground(bg);
+
+        TextView title = new TextView(this);
+        title.setText("TV Home");
+        title.setTextColor(th.text);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        title.setPadding(0, 0, 0, dp(16));
+        panel.addView(title);
+
+        final LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        final int accentIdx = Math.max(0, Math.min(prefs.getInt("accent", 0), Theme.ACCENTS.length - 1));
+        final List<TextView> rows = new ArrayList<>();
+
+        TextView themeRow = pill("Theme  \u00B7  " + Theme.modeName(th.mode));
+        themeRow.setOnClickListener(v -> {
+            prefs.edit().putString("theme", Theme.nextMode(th.mode)).apply();
+            applyTheme();
+            showHomeSettings(0);
+        });
+        rows.add(themeRow);
+
+        TextView accentRow = pill("Colour  \u00B7  " + Theme.ACCENT_NAMES[accentIdx]
+                + (Theme.COLOUR.equals(th.mode) ? "" : "  (Colour theme)"));
+        accentRow.setOnClickListener(v -> {
+            prefs.edit().putInt("accent", (accentIdx + 1) % Theme.ACCENTS.length)
+                    .putString("theme", Theme.COLOUR).apply();
+            applyTheme();
+            showHomeSettings(1);
+        });
+        rows.add(accentRow);
+
+        Set<String> hidden = prefs.getStringSet("hidden", new HashSet<String>());
+        if (!hidden.isEmpty()) {
+            TextView hiddenRow = pill("Show " + hidden.size() + " hidden apps");
+            hiddenRow.setOnClickListener(v -> {
+                prefs.edit().remove("hidden").apply();
+                d.dismiss();
+                refresh(true);
+            });
+            rows.add(hiddenRow);
+        }
+
+        TextView orderRow = pill("Reset app order");
+        orderRow.setOnClickListener(v -> {
+            prefs.edit().remove("order").apply();
+            d.dismiss();
+            refresh(true);
+        });
+        rows.add(orderRow);
+
+        TextView done = pill("Done");
+        done.setOnClickListener(v -> d.dismiss());
+        rows.add(done);
+
+        for (TextView row : rows) {
+            row.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.bottomMargin = dp(10);
+            list.addView(row, lp);
+        }
+        panel.addView(list, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        d.setContentView(panel);
+        openDialog = d;
+        d.show();
+        Window window = d.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+            window.setLayout(dp(380), ViewGroup.LayoutParams.MATCH_PARENT);
+            window.setDimAmount(0.55f);
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+        }
+        int row = Math.max(0, Math.min(focusRow, rows.size() - 1));
+        rows.get(row).requestFocus();
     }
 
     private void safeStart(Intent intent) {
