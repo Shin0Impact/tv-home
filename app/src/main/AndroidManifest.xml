@@ -4,8 +4,14 @@
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
+    <!-- Only used to download artwork that an app publishes for what it is playing (HTTPS only). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Lets the hero read Android TV's Watch Next and apps' home-screen rows. Granted automatically. -->
+    <uses-permission android:name="com.android.providers.tv.permission.READ_EPG_DATA" />
+
     <!-- Lets the launcher see installed TV apps without the broad QUERY_ALL_PACKAGES permission. -->
     <queries>
+        <provider android:authorities="android.media.tv" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
@@ -39,5 +45,17 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Empty service: the thing "notification access" is granted to so the hero can see
+             what is playing. It never reads notifications. -->
+        <service
+            android:name=".MediaListener"
+            android:exported="true"
+            android:label="TV Home"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>
