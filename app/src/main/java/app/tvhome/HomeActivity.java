@@ -71,6 +71,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -460,7 +462,7 @@ public class HomeActivity extends Activity {
         cell.setClickable(true);
         cell.setClipChildren(false);
 
-        final float radius = dp(6);
+        final float radius = dp(16);
         final FrameLayout card = new FrameLayout(this);
         GradientDrawable cardBg = new GradientDrawable();
         cardBg.setColor(CARD_COLOR);
@@ -546,7 +548,7 @@ public class HomeActivity extends Activity {
 
         l.side = new ImageView(this);
         l.side.setClipToOutline(true);
-        l.side.setOutlineProvider(rounded(dp(6)));
+        l.side.setOutlineProvider(rounded(dp(14)));
         FrameLayout.LayoutParams sideLp = new FrameLayout.LayoutParams(dp(300), dp(169),
                 Gravity.END | Gravity.CENTER_VERTICAL);
         sideLp.rightMargin = dp(40);
@@ -599,7 +601,7 @@ public class HomeActivity extends Activity {
         heroRoot = new FrameLayout(this);
         heroRoot.setFocusable(true);
         heroRoot.setClickable(true);
-        final float radius = dp(8);
+        final float radius = dp(24);
         GradientDrawable bg = new GradientDrawable(
                 GradientDrawable.Orientation.TL_BR, new int[]{0xFF26304D, 0xFF121829});
         bg.setCornerRadius(radius);
@@ -741,7 +743,7 @@ public class HomeActivity extends Activity {
                 h.artUri = art.isEmpty() ? null : art;
                 h.banner = a.banner;
                 h.icon = a.icon;
-                h.intent = a.launch;
+                h.intent = intentFor(o.optString("link"), a);
                 out.add(h);
                 seen.add(h.title);
             }
@@ -833,6 +835,17 @@ public class HomeActivity extends Activity {
                 String art = firstNonEmpty(md.getString(MediaMetadata.METADATA_KEY_ART_URI),
                         md.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI),
                         md.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI));
+                String link = null;
+                if (pkg.contains("youtube")) {
+                    storeMetadataDebug(md);
+                    String vid = findVideoId(md);
+                    if (vid != null) {
+                        link = "https://www.youtube.com/watch?v=" + vid;
+                        if (art == null) {
+                            art = "https://i.ytimg.com/vi/" + vid + "/hqdefault.jpg";
+                        }
+                    }
+                }
                 if (art == null) {
                     Bitmap b = firstBitmap(md.getBitmap(MediaMetadata.METADATA_KEY_ART),
                             md.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART),
@@ -851,6 +864,9 @@ public class HomeActivity extends Activity {
                 if (art == null && old != null && !old.optString("art").isEmpty()) {
                     art = old.optString("art");
                 }
+                if (link == null && old != null && !old.optString("link").isEmpty()) {
+                    link = old.optString("link");
+                }
                 if (old != null && items.indexOf(old) == 0
                         && (art == null ? "" : art).equals(old.optString("art"))) {
                     continue; // already the newest entry, nothing new
@@ -863,6 +879,7 @@ public class HomeActivity extends Activity {
                 entry.put("title", title);
                 entry.put("sub", detail == null ? "" : detail);
                 entry.put("art", art == null ? "" : art);
+                entry.put("link", link == null ? "" : link);
                 items.add(0, entry);
                 changed = true;
             }
@@ -885,6 +902,41 @@ public class HomeActivity extends Activity {
         } catch (Exception ignored) {
             // history is a nicety; never let it break the home screen
         }
+    }
+
+    private static final Pattern VIDEO_LINK =
+            Pattern.compile("(?:[?&]v=|youtu\\.be/|/vi/|/embed/|/shorts/)([A-Za-z0-9_-]{11})");
+    private static final Pattern VIDEO_ID = Pattern.compile("[A-Za-z0-9_-]{11}");
+
+    /** Looks through what YouTube reports for something that identifies the video. */
+    private String findVideoId(MediaMetadata md) {
+        String mediaId = md.getString(MediaMetadata.METADATA_KEY_MEDIA_ID);
+        if (mediaId != null && VIDEO_ID.matcher(mediaId).matches()) {
+            return mediaId;
+        }
+        for (String key : md.keySet()) {
+            String v = md.getString(key);
+            if (v == null) {
+                continue;
+            }
+            Matcher m = VIDEO_LINK.matcher(v);
+            if (m.find()) {
+                return m.group(1);
+            }
+        }
+        return null;
+    }
+
+    /** What the media app reports, for the diagnostics line in the quick settings panel. */
+    private void storeMetadataDebug(MediaMetadata md) {
+        StringBuilder sb = new StringBuilder("YouTube reports:");
+        for (String key : md.keySet()) {
+            String v = md.getString(key);
+            String shortKey = key.substring(key.lastIndexOf('.') + 1);
+            sb.append("\n").append(shortKey).append(" = ")
+                    .append(v == null ? "(not text)" : v.length() > 40 ? v.substring(0, 40) + "..." : v);
+        }
+        prefs.edit().putString("mddebug", sb.toString()).apply();
     }
 
     private String saveArt(Bitmap b, String pkg, String title) {
@@ -964,6 +1016,38 @@ public class HomeActivity extends Activity {
             }
         }
         return rows + " found";
+    }
+
+    /** Opens the exact video when we know its link, otherwise just the app. */
+    private Intent intentFor(String link, App a) {
+        if (link != null && !link.isEmpty()) {
+            return new Intent(Intent.ACTION_VIEW, Uri.parse(link))
+                    .setPackage(a.pkg).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        }
+        return a.launch;
+    }
+
+    private List<JSONObject> recentHistory(int max) {
+        List<JSONObject> out = new ArrayList<>();
+        try {
+            JSONArray arr = new JSONArray(prefs.getString("history", "[]"));
+            for (int i = 0; i < arr.length() && out.size() < max; i++) {
+                out.add(arr.getJSONObject(i));
+            }
+        } catch (Exception ignored) {
+            // unreadable history: show nothing
+        }
+        return out;
+    }
+
+    private TextView sectionTitle(String text) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setTextColor(Color.WHITE);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        t.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        t.setPadding(0, dp(4), 0, dp(10));
+        return t;
     }
 
     private List<MediaController> sessions() {
@@ -1242,6 +1326,58 @@ public class HomeActivity extends Activity {
         prefs.edit().putString(key, TextUtils.join(",", list)).apply();
     }
 
+    private void addWatchedShelf(List<App> apps) {
+        List<JSONObject> hist = recentHistory(14);
+        if (hist.isEmpty()) {
+            return;
+        }
+        Map<String, App> byPkg = new HashMap<>();
+        for (App a : apps) {
+            byPkg.put(a.pkg, a);
+        }
+        HScroll hs = new HScroll(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        hs.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        hs.setClipChildren(false);
+        hs.setClipToPadding(false);
+        hs.setPadding(0, dp(10), 0, dp(10));
+        LinearLayout rowView = newRow();
+        int shown = 0;
+        for (JSONObject o : hist) {
+            final App src = byPkg.get(o.optString("pkg"));
+            if (src == null) {
+                continue; // app is hidden or uninstalled
+            }
+            final Intent open = intentFor(o.optString("link"), src);
+            View cell = makeTile(topW, o.optString("title"), null,
+                    src.banner != null ? src.banner : src.icon, false);
+            String art = o.optString("art");
+            if (!art.isEmpty()) {
+                FrameLayout card = (FrameLayout) ((LinearLayout) cell).getChildAt(0);
+                ImageView img = (ImageView) card.getChildAt(0);
+                img.setLayoutParams(new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                img.setImageDrawable(null);
+                loadImage(art, img);
+            }
+            cell.setOnClickListener(v -> safeStart(open));
+            rowView.addView(cell, cellParams(topW));
+            shown++;
+        }
+        if (shown == 0) {
+            return;
+        }
+        grid.addView(sectionTitle("Recently watched"), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        hs.addView(rowView, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = dp(8);
+        grid.addView(hs, lp);
+    }
+
     private void render(List<App> apps) {
         // Hold the page height while it is rebuilt so the scroll position does not jump to the top.
         grid.setMinimumHeight(grid.getHeight());
@@ -1278,6 +1414,8 @@ public class HomeActivity extends Activity {
             topLp.bottomMargin = dp(18);
             grid.addView(top, topLp);
         }
+
+        addWatchedShelf(apps);
 
         if (apps.size() > topCount) {
             LinearLayout row = null;

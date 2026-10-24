@@ -83,7 +83,9 @@ public class PanelActivity extends Activity {
         panel.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         TextView diag = new TextView(this);
-        diag.setText(getSharedPreferences("home", MODE_PRIVATE).getString("epgdebug", "Apps' rows: not read yet"));
+        android.content.SharedPreferences sp = getSharedPreferences("home", MODE_PRIVATE);
+        diag.setText(sp.getString("epgdebug", "Apps' rows: not read yet")
+                + "\n\n" + sp.getString("mddebug", "YouTube reports: nothing yet"));
         diag.setTextColor(0xFF9AA3B8);
         diag.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         diag.setPadding(dp(4), dp(12), 0, 0);
