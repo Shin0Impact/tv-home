@@ -178,8 +178,36 @@ final class History {
         return null;
     }
 
+    /** True when the picture is (nearly) one flat colour, such as the black frame apps send while paused. */
+    private static boolean isBlank(Bitmap b) {
+        int min = 255;
+        int max = 0;
+        for (int y = 0; y < 9; y++) {
+            for (int x = 0; x < 16; x++) {
+                int p = b.getPixel(Math.min(b.getWidth() - 1, x * b.getWidth() / 16 + b.getWidth() / 32),
+                        Math.min(b.getHeight() - 1, y * b.getHeight() / 9 + b.getHeight() / 18));
+                int lum = (((p >> 16) & 0xFF) * 3 + ((p >> 8) & 0xFF) * 6 + (p & 0xFF)) / 10;
+                min = Math.min(min, lum);
+                max = Math.max(max, lum);
+            }
+        }
+        return max - min < 14;
+    }
+
     private static String saveArt(Context ctx, Bitmap b, String pkg, String title) {
         try {
+            boolean blank = false;
+            try {
+                blank = isBlank(b);
+            } catch (Exception ignored) {
+                // cannot sample this bitmap: assume it is fine
+            }
+            if (blank) {
+                // Keep whatever good picture was saved earlier for this title.
+                File old = new File(new File(ctx.getCacheDir(), "art"),
+                        Integer.toHexString((pkg + "|" + title).hashCode()) + ".jpg");
+                return old.exists() ? Uri.fromFile(old).toString() : null;
+            }
             File dir = new File(ctx.getCacheDir(), "art");
             if (!dir.exists() && !dir.mkdirs()) {
                 return null;

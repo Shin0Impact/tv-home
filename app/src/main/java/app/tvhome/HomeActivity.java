@@ -785,22 +785,6 @@ public class HomeActivity extends Activity {
                         out.add(it);
                         continue;
                     }
-                    long sec = Math.max(0, st.getPosition() / 1000);
-                    String clock = sec >= 3600
-                            ? String.format(java.util.Locale.US, "%d:%02d:%02d", sec / 3600, sec / 60 % 60, sec % 60)
-                            : String.format(java.util.Locale.US, "%d:%02d", sec / 60, sec % 60);
-                    HeroItem resume = new HeroItem();
-                    resume.appLabel = a.label;
-                    resume.title = "Continue watching";
-                    resume.subtitle = st.getState() == PlaybackState.STATE_PLAYING
-                            ? "Playing now  \u00B7  press OK to open"
-                            : "Paused  \u00B7  press OK to resume";
-                    resume.banner = a.banner;
-                    resume.icon = a.icon;
-                    resume.pending = c.getSessionActivity();
-                    resume.controller = c;
-                    resume.intent = a.launch;
-                    out.add(resume);
                 }
                 continue;
             }
@@ -832,32 +816,6 @@ public class HomeActivity extends Activity {
             it.controller = c;
             it.intent = a.launch;
             out.add(it);
-        }
-        if (out.isEmpty()) {
-            // No live session (app closed since): offer the last resume point we saw.
-            String r = prefs.getString("resume_" + a.pkg, null);
-            if (r != null && r.contains("|")) {
-                try {
-                    long pos = Long.parseLong(r.substring(0, r.indexOf('|')));
-                    long when = Long.parseLong(r.substring(r.indexOf('|') + 1));
-                    if (System.currentTimeMillis() - when < 14L * 24 * 3600 * 1000) {
-                        long sec = Math.max(0, pos / 1000);
-                        String clock = sec >= 3600
-                                ? String.format(java.util.Locale.US, "%d:%02d:%02d", sec / 3600, sec / 60 % 60, sec % 60)
-                                : String.format(java.util.Locale.US, "%d:%02d", sec / 60, sec % 60);
-                        HeroItem last = new HeroItem();
-                        last.appLabel = a.label;
-                        last.title = "Continue watching";
-                        last.subtitle = "Press OK to open";
-                        last.banner = a.banner;
-                        last.icon = a.icon;
-                        last.intent = a.launch;
-                        out.add(last);
-                    }
-                } catch (NumberFormatException ignored) {
-                    // bad record: skip
-                }
-            }
         }
         // Titles remembered from earlier playback in this app (live ones above take priority).
         Set<String> seen = new HashSet<>();
