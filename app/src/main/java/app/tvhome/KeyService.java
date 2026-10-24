@@ -1,0 +1,43 @@
+package app.tvhome;
+
+import android.accessibilityservice.AccessibilityService;
+import android.content.Intent;
+import android.view.KeyEvent;
+import android.view.accessibility.AccessibilityEvent;
+
+/**
+ * Catches the remote's Settings / notifications button before the TV's own firmware does, and opens
+ * TV Home's quick settings panel. Android only lets an accessibility service see key presses, so this
+ * is the one place that can do it. It ignores every other key, never reads the screen (see
+ * key_service.xml: no window content access) and does nothing with accessibility events.
+ */
+public class KeyService extends AccessibilityService {
+
+    @Override
+    protected boolean onKeyEvent(KeyEvent event) {
+        int key = event.getKeyCode();
+        if (key != KeyEvent.KEYCODE_NOTIFICATION && key != KeyEvent.KEYCODE_SETTINGS) {
+            return false;
+        }
+        if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+            Intent open = new Intent(this, PanelActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            try {
+                startActivity(open);
+            } catch (Exception ignored) {
+                // nothing to do
+            }
+        }
+        return true;
+    }
+
+    @Override
+    public void onAccessibilityEvent(AccessibilityEvent event) {
+        // Intentionally empty.
+    }
+
+    @Override
+    public void onInterrupt() {
+        // Intentionally empty.
+    }
+}

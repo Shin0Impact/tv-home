@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="key_service_desc">Lets TV Home open its quick settings panel when you press the remote\'s Settings button. It does not read the screen or anything you type.</string>
+</resources>
