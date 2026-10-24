@@ -754,6 +754,37 @@ public class HomeActivity extends Activity {
                 PlaybackState st = c.getPlaybackState();
                 if (st != null && (st.getState() == PlaybackState.STATE_PAUSED
                         || st.getState() == PlaybackState.STATE_PLAYING)) {
+                    // Paused apps often blank their metadata (YouTube does): the newest remembered
+                    // title for this app is almost certainly what is paused, so show that.
+                    JSONObject last = null;
+                    try {
+                        JSONArray hist = new JSONArray(prefs.getString("history", "[]"));
+                        for (int i = 0; i < hist.length() && last == null; i++) {
+                            JSONObject o = hist.getJSONObject(i);
+                            if (a.pkg.equals(o.optString("pkg")) && !o.optString("title").isEmpty()) {
+                                last = o;
+                            }
+                        }
+                    } catch (Exception ignored) {
+                        // no history
+                    }
+                    if (last != null) {
+                        HeroItem it = new HeroItem();
+                        it.appLabel = a.label;
+                        it.title = last.optString("title");
+                        String sub = last.optString("sub");
+                        it.subtitle = (st.getState() == PlaybackState.STATE_PLAYING ? "Now playing" : "Paused, press OK to resume")
+                                + (sub.isEmpty() ? "" : "  ·  " + sub);
+                        String art = last.optString("art");
+                        it.artUri = art.isEmpty() ? null : art;
+                        it.banner = a.banner;
+                        it.icon = a.icon;
+                        it.pending = c.getSessionActivity();
+                        it.controller = c;
+                        it.intent = a.launch;
+                        out.add(it);
+                        continue;
+                    }
                     long sec = Math.max(0, st.getPosition() / 1000);
                     String clock = sec >= 3600
                             ? String.format(java.util.Locale.US, "%d:%02d:%02d", sec / 3600, sec / 60 % 60, sec % 60)
