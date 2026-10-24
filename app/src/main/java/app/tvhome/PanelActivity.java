@@ -82,6 +82,13 @@ public class PanelActivity extends Activity {
         sv.addView(list);
         panel.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
+        TextView diag = new TextView(this);
+        diag.setText(getSharedPreferences("home", MODE_PRIVATE).getString("epgdebug", "Apps' rows: not read yet"));
+        diag.setTextColor(0xFF9AA3B8);
+        diag.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        diag.setPadding(dp(4), dp(12), 0, 0);
+        panel.addView(diag);
+
         setContentView(panel);
         Window window = getWindow();
         window.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);

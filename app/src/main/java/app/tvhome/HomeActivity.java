@@ -751,8 +751,17 @@ public class HomeActivity extends Activity {
         }
         io.execute(() -> {
             Map<String, List<HeroItem>> map = new HashMap<>();
-            readPrograms(map, TvContract.WatchNextPrograms.CONTENT_URI, "Continue watching");
-            readPrograms(map, TvContract.PreviewPrograms.CONTENT_URI, "Recommended");
+            StringBuilder dbg = new StringBuilder();
+            dbg.append("Watch Next: ").append(readPrograms(map, TvContract.WatchNextPrograms.CONTENT_URI,
+                    "Continue watching"));
+            dbg.append("\nHome rows: ").append(readPrograms(map, TvContract.PreviewPrograms.CONTENT_URI,
+                    "Recommended"));
+            int total = 0;
+            for (List<HeroItem> l : map.values()) {
+                total += l.size();
+            }
+            dbg.append("\nCards from apps: ").append(total);
+            prefs.edit().putString("epgdebug", dbg.toString()).apply();
             programsByPkg = map;
         });
     }
@@ -872,8 +881,10 @@ public class HomeActivity extends Activity {
         }
     }
 
-    private void readPrograms(Map<String, List<HeroItem>> map, Uri uri, String kind) {
+    /** Returns a short status for the diagnostics line in the quick settings panel. */
+    private String readPrograms(Map<String, List<HeroItem>> map, Uri uri, String kind) {
         Cursor c = null;
+        int rows = 0;
         try {
             c = getContentResolver().query(uri,
                     new String[]{
@@ -885,9 +896,10 @@ public class HomeActivity extends Activity {
                             TvContract.PreviewPrograms.COLUMN_SHORT_DESCRIPTION},
                     null, null, null);
             if (c == null) {
-                return;
+                return "no access";
             }
             while (c.moveToNext()) {
+                rows++;
                 String pkg = c.getString(4);
                 String intentUri = c.getString(3);
                 String title = c.getString(0);
@@ -916,11 +928,13 @@ public class HomeActivity extends Activity {
             }
         } catch (Exception e) {
             // Not readable on this device: nothing to show from this source.
+            return "blocked (" + e.getClass().getSimpleName() + ")";
         } finally {
             if (c != null) {
                 c.close();
             }
         }
+        return rows + " found";
     }
 
     private List<MediaController> sessions() {
