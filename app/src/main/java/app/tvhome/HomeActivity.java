@@ -1850,7 +1850,6 @@ public class HomeActivity extends Activity {
             GradientDrawable panelBg = new GradientDrawable(
                     GradientDrawable.Orientation.TOP_BOTTOM, Theme.grad(th.panel));
             panelBg.setCornerRadius(dp(28));
-            panelBg.setStroke(Math.max(1, dp(1)), th.light ? 0x1A000000 : 0x1FFFFFFF);
             panel.setBackground(panelBg);
 
             LinearLayout top = newRow();
@@ -2157,8 +2156,7 @@ public class HomeActivity extends Activity {
         panel.setPadding(dp(28), dp(32), dp(28), dp(24));
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(th.sheet);
-        bg.setCornerRadius(dp(32));
-        bg.setStroke(Math.max(1, dp(1)), th.light ? 0x22000000 : 0x26FFFFFF);
+        bg.setCornerRadii(new float[]{dp(20), dp(20), 0, 0, 0, 0, dp(20), dp(20)});
         panel.setBackground(bg);
 
         TextView title = new TextView(this);
@@ -2252,7 +2250,7 @@ public class HomeActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         android.widget.FrameLayout floatFrame = new android.widget.FrameLayout(this);
-        floatFrame.setPadding(dp(16), dp(16), dp(16), dp(16));
+        floatFrame.setPadding(0, 0, 0, 0);
         floatFrame.addView(panel, new android.widget.FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         d.setContentView(floatFrame);
@@ -2262,7 +2260,7 @@ public class HomeActivity extends Activity {
         if (window != null) {
             window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             window.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-            window.setLayout(dp(380 + 32), ViewGroup.LayoutParams.MATCH_PARENT);
+            window.setLayout(dp(380), ViewGroup.LayoutParams.MATCH_PARENT);
             window.setDimAmount(0.55f);
             window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
         }

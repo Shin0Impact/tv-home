@@ -80,14 +80,14 @@ final class Theme {
                     0xFFDDE5F5, 0xFFF5F1EC, 0xFFDCE4F1,
                     0xB3FFFFFF, 0xF5F4F6FA, 0xFFD5DAE4, 0xFFFFFFFF,
                     0xFF14171F, 0xFF5B6475, 0xFF14171F, 0xFF14171F, 0xFFFFFFFF, accent,
-                    0x80FFB88C, 0x708CB8FF);
+                    0, 0);
         }
         if (GRAY.equals(mode)) {
             return new Theme(GRAY, false,
                     0xFF1B1D22, 0xFF30343C, 0xFF191B1F,
                     0x2AFFFFFF, 0xF2282B32, 0xFF383C45, 0xFF3A3E47,
                     0xFFFFFFFF, 0xFFA7ADB9, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF15171B, accent,
-                    0x408FA3C7, 0x30C79FB5);
+                    0, 0);
         }
         if (OLED.equals(mode)) {
             // Pure black so the pixels switch off; panels are only a faint lift.
@@ -104,14 +104,14 @@ final class Theme {
                     0x2EFFFFFF, mix(accent, 0xFF000000, 0.80f) & 0x00FFFFFF | 0xF2000000,
                     mix(accent, 0xFF000000, 0.6f), mix(accent, 0xFF000000, 0.5f) & 0x00FFFFFF | 0x99000000,
                     0xFFFFFFFF, 0xFFD3D9E6, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF0A0E1A, 0xFFFFFFFF,
-                    (accent & 0x00FFFFFF) | 0x99000000, (mix(accent, 0xFFFFFFFF, 0.45f) & 0x00FFFFFF) | 0x66000000);
+                    0, 0);
         }
         boolean art = ART.equals(mode);
         return new Theme(art ? ART : DARK, false,
                 0xFF0A0F20, 0xFF1D2548, 0xFF0B1224,
                 0x26FFFFFF, 0xF2121829, 0xFF1C2338, 0xFF232B42,
                 0xFFFFFFFF, 0xFF9AA3B8, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF0A0E1A, accent,
-                0x665B6CFF, 0x4A19C2B0);
+                0, 0);
     }
 
     /** Background colours for the Hero art theme, derived from one colour taken from the picture. */
@@ -124,9 +124,7 @@ final class Theme {
 
     /** The two background glows for the Hero art theme, taken from the colour of the picture. */
     static int[] artBlobs(int color) {
-        return new int[]{
-                (mix(color, 0xFFFFFFFF, 0.1f) & 0x00FFFFFF) | 0xA0000000,
-                (mix(color, 0xFFFFFFFF, 0.45f) & 0x00FFFFFF) | 0x66000000};
+        return new int[]{0, 0};
     }
 
     static int mix(int a, int b, float t) {
@@ -149,7 +147,7 @@ final class Theme {
 
     /** A slight top-to-bottom gradient for a surface: a touch lighter on top, a touch deeper below. */
     static int[] grad(int c) {
-        return new int[]{tone(c, 0xFFFFFFFF, 0.08f), tone(c, 0xFF000000, 0.12f)};
+        return new int[]{c, c};
     }
 
     static String modeName(String mode) {

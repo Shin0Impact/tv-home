@@ -56,8 +56,7 @@ public class PanelActivity extends Activity {
         // A floating rounded card with a hairline edge, not a slab glued to the screen edge.
         GradientDrawable bg = new GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM, Theme.grad(th.sheet));
-        bg.setCornerRadius(dp(32));
-        bg.setStroke(Math.max(1, dp(1)), th.light ? 0x22000000 : 0x26FFFFFF);
+        bg.setCornerRadii(new float[]{dp(20), dp(20), 0, 0, 0, 0, dp(20), dp(20)});
         panel.setBackground(bg);
 
         TextView title = new TextView(this);
@@ -158,26 +157,17 @@ public class PanelActivity extends Activity {
         panel.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         android.widget.FrameLayout frame = new android.widget.FrameLayout(this);
-        frame.setPadding(dp(16), dp(16), dp(16), dp(16));
+        frame.setPadding(0, 0, 0, 0);
         frame.setClipChildren(false);
         frame.addView(panel, new android.widget.FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(frame);
         Window window = getWindow();
         window.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        window.setLayout(dp(470 + 32), ViewGroup.LayoutParams.MATCH_PARENT);
+        window.setLayout(dp(470), ViewGroup.LayoutParams.MATCH_PARENT);
         window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
         window.setDimAmount(0.5f);
-        if (android.os.Build.VERSION.SDK_INT >= 31) {
-            try {
-                // Blur what is behind the panel where the TV supports it.
-                window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
-                window.getAttributes().setBlurBehindRadius(dp(24));
-                window.setAttributes(window.getAttributes());
-            } catch (Throwable ignored) {
-                // no blur: the dim is enough
-            }
-        }
+
     }
 
     private void openAction(String action) {
@@ -247,7 +237,7 @@ public class PanelActivity extends Activity {
         card.setClickable(true);
         final GradientDrawable bg = new GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM, Theme.grad(th.pill));
-        bg.setCornerRadius(dp(18));
+        bg.setCornerRadius(dp(12));
         card.setBackground(bg);
 
         // The app's own small icon, on a round coloured chip so a white icon is always visible.
@@ -328,6 +318,8 @@ public class PanelActivity extends Activity {
         cell.setFocusable(true);
         cell.setClickable(true);
         cell.setPadding(0, dp(6), 0, dp(6));
+        cell.setClipChildren(false);
+        cell.setClipToPadding(false);
 
         final View disc = new View(this) {
             @Override
@@ -339,9 +331,16 @@ public class PanelActivity extends Activity {
                 p.setStyle(Paint.Style.FILL);
                 int fill = on ? th.accent : th.pill;
                 p.setColor(f ? th.focusBg : fill);
-                cv.drawCircle(w / 2, h / 2, Math.min(w, h) / 2, p);
+                float r = Math.min(w, h) / 2 - dp(4);
+                cv.drawCircle(w / 2, h / 2, r, p);
+                if (f) {
+                    p.setStyle(Paint.Style.STROKE);
+                    p.setStrokeWidth(dp(3));
+                    p.setColor(th.ring);
+                    cv.drawCircle(w / 2, h / 2, r + dp(2), p);
+                }
                 int ink = f ? th.focusText : (on ? Color.WHITE : th.text);
-                Icons.draw(cv, icon, w / 2, h / 2, Math.min(w, h) * 0.9f, ink, f ? th.focusBg : fill);
+                Icons.draw(cv, icon, w / 2, h / 2, r * 2f * 0.9f, ink, f ? th.focusBg : fill);
             }
         };
         cell.addView(disc, new LinearLayout.LayoutParams(dp(64), dp(64)));
@@ -367,8 +366,7 @@ public class PanelActivity extends Activity {
 
         cell.setOnFocusChangeListener((v, focused) -> {
             disc.invalidate();
-            float s = focused ? 1.1f : 1f;
-            disc.animate().scaleX(s).scaleY(s).setDuration(110).start();
+
         });
         return cell;
     }
