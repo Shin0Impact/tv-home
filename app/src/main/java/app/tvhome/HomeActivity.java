@@ -667,6 +667,20 @@ public class HomeActivity extends Activity {
         return heroRoot;
     }
 
+    private void resumeNow(MediaController mc) {
+        try {
+            PlaybackState s = mc.getPlaybackState();
+            if (s != null && s.getState() == PlaybackState.STATE_PLAYING) {
+                return;
+            }
+            mc.getTransportControls().play();
+            mc.dispatchMediaButtonEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY));
+            mc.dispatchMediaButtonEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY));
+        } catch (Exception ignored) {
+            // the app refused
+        }
+    }
+
     private void openHeroItem() {
         if (heroItems.isEmpty()) {
             return;
@@ -691,11 +705,11 @@ public class HomeActivity extends Activity {
         }
         if (it.controller != null) {
             // Something is paused or playing in that app: resume it rather than just opening the app.
-            try {
-                it.controller.getTransportControls().play();
-            } catch (Exception ignored) {
-                // the app refused; it still opened
-            }
+            final MediaController mc = it.controller;
+            resumeNow(mc);
+            // Some apps ignore the request until they are on screen again, so ask once more.
+            ui.postDelayed(() -> resumeNow(mc), 1200);
+            ui.postDelayed(() -> resumeNow(mc), 2500);
         }
     }
 
@@ -747,8 +761,9 @@ public class HomeActivity extends Activity {
                     HeroItem resume = new HeroItem();
                     resume.appLabel = a.label;
                     resume.title = "Continue watching";
-                    resume.subtitle = (st.getState() == PlaybackState.STATE_PLAYING ? "Playing at " : "Paused at ")
-                            + clock + "  \u00B7  press OK to resume";
+                    resume.subtitle = st.getState() == PlaybackState.STATE_PLAYING
+                            ? "Playing now  \u00B7  press OK to open"
+                            : "Paused  \u00B7  press OK to resume";
                     resume.banner = a.banner;
                     resume.icon = a.icon;
                     resume.pending = c.getSessionActivity();
@@ -802,7 +817,7 @@ public class HomeActivity extends Activity {
                         HeroItem last = new HeroItem();
                         last.appLabel = a.label;
                         last.title = "Continue watching";
-                        last.subtitle = "Last stopped at " + clock + "  ·  press OK to open";
+                        last.subtitle = "Press OK to open";
                         last.banner = a.banner;
                         last.icon = a.icon;
                         last.intent = a.launch;

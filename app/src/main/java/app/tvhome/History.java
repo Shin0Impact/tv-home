@@ -64,7 +64,6 @@ final class History {
                 }
                 return;
             }
-            storeDebug(prefs, pkg, md);
 
             String detail = firstNonEmpty(md.getString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE),
                     md.getString(MediaMetadata.METADATA_KEY_ARTIST));
@@ -81,14 +80,20 @@ final class History {
                     }
                 }
             }
+            String bmp = "none";
             if (art == null) {
                 Bitmap b = firstBitmap(md.getBitmap(MediaMetadata.METADATA_KEY_ART),
                         md.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART),
                         md.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON));
                 if (b != null) {
+                    bmp = b.getWidth() + "x" + b.getHeight();
                     art = saveArt(ctx, b, pkg, title);
                 }
             }
+            storeDebug(prefs, pkg, md);
+            prefs.edit().putString("mddebug_" + pkg,
+                    prefs.getString("mddebug_" + pkg, "") + "\n>> picture: bitmap " + bmp
+                            + ", saved " + (art == null ? "NO" : "yes")).apply();
 
             synchronized (LOCK) {
                 JSONArray arr = new JSONArray(prefs.getString("history", "[]"));
