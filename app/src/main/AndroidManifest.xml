@@ -46,6 +46,21 @@
             </intent-filter>
         </activity>
 
+        <!-- The side panel for the remote's Settings / notifications button. The system sends this
+             action when the button is pressed. -->
+        <activity
+            android:name=".PanelActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.app.action.TOGGLE_NOTIFICATION_HANDLER_PANEL" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <!-- Empty service: the thing "notification access" is granted to so the hero can see
              what is playing. It never reads notifications. -->
         <service
