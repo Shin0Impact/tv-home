@@ -673,7 +673,12 @@ public class HomeActivity extends Activity {
         }
         HeroItem it = heroItems.get(Math.min(heroIdx, heroItems.size() - 1));
         boolean opened = false;
-        if (it.pending != null) {
+        // Netflix's own "open" shortcut lands on the show's page; bring the app forward and
+        // resume the paused session instead.
+        boolean skipPending = it.controller != null && it.intent != null
+                && it.controller.getPackageName() != null
+                && it.controller.getPackageName().contains("netflix");
+        if (it.pending != null && !skipPending) {
             try {
                 it.pending.send();
                 opened = true;
@@ -768,9 +773,12 @@ public class HomeActivity extends Activity {
             it.artUri = firstNonEmpty(md.getString(MediaMetadata.METADATA_KEY_ART_URI),
                     md.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI),
                     md.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI));
-            if (it.art == null && it.artUri == null) {
-                // The app dropped the picture while paused: reuse the one remembered for this title.
-                it.artUri = rememberedArt(a.pkg, title);
+            // Prefer the picture saved when this title was playing: the live one is often blank or
+            // missing while paused.
+            String saved = rememberedArt(a.pkg, title);
+            if (saved != null) {
+                it.art = null;
+                it.artUri = saved;
             }
             it.banner = a.banner;
             it.icon = a.icon;
