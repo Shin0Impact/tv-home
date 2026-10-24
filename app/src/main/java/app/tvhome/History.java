@@ -27,8 +27,8 @@ import java.util.regex.Pattern;
  */
 final class History {
 
-    private static final int PER_APP = 4;
-    private static final int TOTAL = 40;
+    private static final int PER_APP = 10;
+    private static final int TOTAL = 80;
     private static final Object LOCK = new Object();
     private static final ExecutorService IO = Executors.newSingleThreadExecutor();
 

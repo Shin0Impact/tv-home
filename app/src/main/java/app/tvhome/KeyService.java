@@ -17,6 +17,18 @@ public class KeyService extends AccessibilityService {
     @Override
     protected boolean onKeyEvent(KeyEvent event) {
         int key = event.getKeyCode();
+        if (key == KeyEvent.KEYCODE_HOME) {
+            // Home pressed while TV Home is already showing: scroll to the top. From any other app
+            // we do nothing here and Android takes you home as usual.
+            HomeActivity home = HomeActivity.visible;
+            if (home == null) {
+                return false;
+            }
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                home.goTop();
+            }
+            return true;
+        }
         boolean panel = key == KeyEvent.KEYCODE_NOTIFICATION || key == KeyEvent.KEYCODE_SETTINGS;
         boolean profile = key == KeyEvent.KEYCODE_PROFILE_SWITCH;
         if (!panel && !profile) {

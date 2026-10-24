@@ -86,7 +86,7 @@ public class HomeActivity extends Activity {
 
     private static final int TOP_ROW = 5;
     private static final int GRID_COLS = 7;
-    private static final int ROTATE_MS = 10000;
+    private static final int ROTATE_MS = 7000;
     private static final int HISTORY_PER_APP = 4;
     private static final int HISTORY_TOTAL = 40;
 
@@ -203,6 +203,8 @@ public class HomeActivity extends Activity {
     // Move mode: the app being repositioned, and the app to focus after the next rebuild.
     private String moveApp;
     private String lastFocusPkg;
+    /** The home screen while it is showing; the accessibility service uses it for Home-on-Home. */
+    static volatile HomeActivity visible;
     private boolean onScreen;
     private String focusAfter;
 
@@ -217,7 +219,7 @@ public class HomeActivity extends Activity {
                 if (heroItems.size() != before) {
                     heroIdx = 0;
                     showHero(false);
-                } else if (heroItems.size() > 1) {
+                } else if (heroItems.size() > 1 && !(heroRoot != null && heroRoot.hasFocus())) {
                     heroIdx = (heroIdx + 1) % heroItems.size();
                     showHero(true);
                 }
@@ -245,6 +247,7 @@ public class HomeActivity extends Activity {
     protected void onResume() {
         super.onResume();
         onScreen = true;
+        visible = this;
         refresh(false);
         loadPrograms();
         recordHistoryAsync();
@@ -256,6 +259,9 @@ public class HomeActivity extends Activity {
     protected void onPause() {
         super.onPause();
         onScreen = false;
+        if (visible == this) {
+            visible = null;
+        }
         ui.removeCallbacks(rotate);
         dismissDialog();
     }
@@ -273,7 +279,16 @@ public class HomeActivity extends Activity {
             // Coming back from another app: keep the app that was highlighted last.
             return;
         }
-        // Home pressed while already on the home screen: go back to the start.
+        goTop();
+    }
+
+    /** Home pressed while already on the home screen: back to the top of the page. */
+    void goTop() {
+        dismissDialog();
+        if (moveApp != null) {
+            moveApp = null;
+            rerender();
+        }
         animateScroll(scroll, "scrollY", 0);
         if (firstCell != null) {
             firstCell.requestFocus();
@@ -288,6 +303,15 @@ public class HomeActivity extends Activity {
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
         int key = e.getKeyCode();
+        if (heroRoot != null && heroRoot.hasFocus() && heroItems.size() > 1
+                && (key == KeyEvent.KEYCODE_DPAD_LEFT || key == KeyEvent.KEYCODE_DPAD_RIGHT)) {
+            if (e.getAction() == KeyEvent.ACTION_DOWN) {
+                int n = heroItems.size();
+                heroIdx = (heroIdx + (key == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : n - 1)) % n;
+                showHero(true);
+            }
+            return true;
+        }
         if (moveApp != null) {
             boolean ours = key == KeyEvent.KEYCODE_DPAD_LEFT || key == KeyEvent.KEYCODE_DPAD_RIGHT
                     || key == KeyEvent.KEYCODE_DPAD_UP || key == KeyEvent.KEYCODE_DPAD_DOWN
@@ -877,14 +901,28 @@ public class HomeActivity extends Activity {
         return rows + " found";
     }
 
+    private final Map<String, Boolean> playSearchSupport = new HashMap<>();
+
+    /** Whether the app answers "play this by name" (the request a voice search makes). */
+    private boolean supportsPlaySearch(String pkg) {
+        Boolean known = playSearchSupport.get(pkg);
+        if (known == null) {
+            Intent probe = new Intent("android.media.action.MEDIA_PLAY_FROM_SEARCH").setPackage(pkg);
+            known = getPackageManager().resolveActivity(probe, 0) != null;
+            playSearchSupport.put(pkg, known);
+        }
+        return known;
+    }
+
     /** True when pressing OK on this remembered title can lead somewhere specific, not just the app. */
     private boolean canOpen(JSONObject o) {
-        return !o.optString("link").isEmpty() || o.optString("pkg").contains("youtube");
+        String pkg = o.optString("pkg");
+        return !o.optString("link").isEmpty() || pkg.contains("youtube") || supportsPlaySearch(pkg);
     }
 
     /**
-     * Opens the exact video when we know its link. YouTube doesn't tell us a link, so for YouTube we
-     * ask it to play by title, the same request a voice search makes.
+     * Opens the exact video when we know its link. Otherwise we ask the app to play the title by
+     * name, the same request a voice search makes.
      */
     private Intent intentFor(JSONObject o, App a) {
         String link = o.optString("link");
@@ -892,16 +930,15 @@ public class HomeActivity extends Activity {
             return new Intent(Intent.ACTION_VIEW, Uri.parse(link))
                     .setPackage(a.pkg).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         }
-        if (a.pkg.contains("youtube")) {
-            String title = o.optString("title");
-            Intent play = new Intent("android.media.action.MEDIA_PLAY_FROM_SEARCH")
+        String title = o.optString("title");
+        if (supportsPlaySearch(a.pkg)) {
+            return new Intent("android.media.action.MEDIA_PLAY_FROM_SEARCH")
                     .setPackage(a.pkg)
                     .putExtra("query", title)
                     .putExtra("android.intent.extra.focus", "vnd.android.cursor.item/*")
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            if (getPackageManager().resolveActivity(play, 0) != null) {
-                return play;
-            }
+        }
+        if (a.pkg.contains("youtube")) {
             return new Intent(Intent.ACTION_VIEW,
                     Uri.parse("https://www.youtube.com/results?search_query=" + Uri.encode(title)))
                     .setPackage(a.pkg).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -1297,7 +1334,6 @@ public class HomeActivity extends Activity {
             grid.addView(top, topLp);
         }
 
-        addWatchedShelf(apps);
 
         if (apps.size() > topCount) {
             LinearLayout row = null;
