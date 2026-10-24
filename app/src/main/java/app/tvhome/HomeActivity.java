@@ -223,7 +223,7 @@ public class HomeActivity extends Activity {
     private String stageApp;
     private int stageIdx = -1;
     private int stageN;
-    private GradientDrawable bgDrawable;
+    private Backdrop bgDrawable;
     private ValueAnimator tintAnim;
     private int tintColor;
 
@@ -429,8 +429,8 @@ public class HomeActivity extends Activity {
 
     private View buildRoot(int pad) {
         FrameLayout root = new FrameLayout(this);
-        bgDrawable = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{th.bgA, th.bgB, th.bgC});
+        bgDrawable = new Backdrop();
+        bgDrawable.set(new int[]{th.bgA, th.bgB, th.bgC}, th.blobA, th.blobB);
         root.setBackground(bgDrawable);
         tintColor = 0;
 
@@ -995,23 +995,34 @@ public class HomeActivity extends Activity {
         if (bgDrawable == null || color == tintColor) {
             return;
         }
-        final int[] from = tintColor == 0 ? new int[]{th.bgA, th.bgB, th.bgC} : Theme.artBackground(tintColor);
-        final int[] to = color == 0 ? new int[]{th.bgA, th.bgB, th.bgC} : Theme.artBackground(color);
+        final int[] from = tintSet(tintColor);
+        final int[] to = tintSet(color);
         tintColor = color;
         if (tintAnim != null) {
             tintAnim.cancel();
         }
         final ArgbEvaluator ev = new ArgbEvaluator();
         tintAnim = ValueAnimator.ofFloat(0f, 1f);
-        tintAnim.setDuration(500);
+        tintAnim.setDuration(600);
         tintAnim.addUpdateListener(a -> {
             float t = (Float) a.getAnimatedValue();
-            bgDrawable.setColors(new int[]{
-                    (Integer) ev.evaluate(t, from[0], to[0]),
-                    (Integer) ev.evaluate(t, from[1], to[1]),
-                    (Integer) ev.evaluate(t, from[2], to[2])});
+            int[] now = new int[5];
+            for (int i = 0; i < 5; i++) {
+                now[i] = (Integer) ev.evaluate(t, from[i], to[i]);
+            }
+            bgDrawable.set(new int[]{now[0], now[1], now[2]}, now[3], now[4]);
         });
         tintAnim.start();
+    }
+
+    /** Three background colours and two glows: the theme's own, or ones taken from a picture colour. */
+    private int[] tintSet(int color) {
+        if (color == 0) {
+            return new int[]{th.bgA, th.bgB, th.bgC, th.blobA, th.blobB};
+        }
+        int[] bg = Theme.artBackground(color);
+        int[] blobs = Theme.artBlobs(color);
+        return new int[]{bg[0], bg[1], bg[2], blobs[0], blobs[1]};
     }
 
     private void resumeNow(MediaController mc) {
@@ -1839,6 +1850,7 @@ public class HomeActivity extends Activity {
             GradientDrawable panelBg = new GradientDrawable(
                     GradientDrawable.Orientation.TOP_BOTTOM, Theme.grad(th.panel));
             panelBg.setCornerRadius(dp(28));
+            panelBg.setStroke(Math.max(1, dp(1)), th.light ? 0x1A000000 : 0x1FFFFFFF);
             panel.setBackground(panelBg);
 
             LinearLayout top = newRow();
@@ -2145,7 +2157,8 @@ public class HomeActivity extends Activity {
         panel.setPadding(dp(28), dp(32), dp(28), dp(24));
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(th.sheet);
-        bg.setCornerRadii(new float[]{dp(24), dp(24), 0, 0, 0, 0, dp(24), dp(24)});
+        bg.setCornerRadius(dp(32));
+        bg.setStroke(Math.max(1, dp(1)), th.light ? 0x22000000 : 0x26FFFFFF);
         panel.setBackground(bg);
 
         TextView title = new TextView(this);
@@ -2238,14 +2251,18 @@ public class HomeActivity extends Activity {
         panel.addView(list, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        d.setContentView(panel);
+        android.widget.FrameLayout floatFrame = new android.widget.FrameLayout(this);
+        floatFrame.setPadding(dp(16), dp(16), dp(16), dp(16));
+        floatFrame.addView(panel, new android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        d.setContentView(floatFrame);
         openDialog = d;
         d.show();
         Window window = d.getWindow();
         if (window != null) {
             window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             window.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-            window.setLayout(dp(380), ViewGroup.LayoutParams.MATCH_PARENT);
+            window.setLayout(dp(380 + 32), ViewGroup.LayoutParams.MATCH_PARENT);
             window.setDimAmount(0.55f);
             window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
         }

@@ -45,10 +45,13 @@ final class Theme {
     final int focusText;
     /** The tile being moved. */
     final int accent;
+    /** Two soft glows painted over the background gradient (top right, bottom left). */
+    final int blobA;
+    final int blobB;
 
     private Theme(String mode, boolean light, int bgA, int bgB, int bgC, int panel, int sheet,
                   int card, int pill, int text, int dim, int ring, int focusBg, int focusText,
-                  int accent) {
+                  int accent, int blobA, int blobB) {
         this.mode = mode;
         this.light = light;
         this.bgA = bgA;
@@ -64,6 +67,8 @@ final class Theme {
         this.focusBg = focusBg;
         this.focusText = focusText;
         this.accent = accent;
+        this.blobA = blobA;
+        this.blobB = blobB;
     }
 
     static Theme load(SharedPreferences p) {
@@ -74,20 +79,23 @@ final class Theme {
             return new Theme(LIGHT, true,
                     0xFFDDE5F5, 0xFFF5F1EC, 0xFFDCE4F1,
                     0xB3FFFFFF, 0xF5F4F6FA, 0xFFD5DAE4, 0xFFFFFFFF,
-                    0xFF14171F, 0xFF5B6475, 0xFF14171F, 0xFF14171F, 0xFFFFFFFF, accent);
+                    0xFF14171F, 0xFF5B6475, 0xFF14171F, 0xFF14171F, 0xFFFFFFFF, accent,
+                    0x80FFB88C, 0x708CB8FF);
         }
         if (GRAY.equals(mode)) {
             return new Theme(GRAY, false,
                     0xFF1B1D22, 0xFF30343C, 0xFF191B1F,
                     0x2AFFFFFF, 0xF2282B32, 0xFF383C45, 0xFF3A3E47,
-                    0xFFFFFFFF, 0xFFA7ADB9, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF15171B, accent);
+                    0xFFFFFFFF, 0xFFA7ADB9, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF15171B, accent,
+                    0x408FA3C7, 0x30C79FB5);
         }
         if (OLED.equals(mode)) {
             // Pure black so the pixels switch off; panels are only a faint lift.
             return new Theme(OLED, false,
                     0xFF000000, 0xFF000000, 0xFF000000,
                     0x1CFFFFFF, 0xFA000000, 0xFF101114, 0xFF17181C,
-                    0xFFFFFFFF, 0xFF8B92A1, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF000000, accent);
+                    0xFFFFFFFF, 0xFF8B92A1, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF000000, accent,
+                    0x00000000, 0x00000000);
         }
         if (COLOUR.equals(mode)) {
             return new Theme(COLOUR, false,
@@ -95,13 +103,15 @@ final class Theme {
                     mix(accent, 0xFF000000, 0.86f),
                     0x2EFFFFFF, mix(accent, 0xFF000000, 0.80f) & 0x00FFFFFF | 0xF2000000,
                     mix(accent, 0xFF000000, 0.6f), mix(accent, 0xFF000000, 0.5f) & 0x00FFFFFF | 0x99000000,
-                    0xFFFFFFFF, 0xFFD3D9E6, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF0A0E1A, 0xFFFFFFFF);
+                    0xFFFFFFFF, 0xFFD3D9E6, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF0A0E1A, 0xFFFFFFFF,
+                    (accent & 0x00FFFFFF) | 0x99000000, (mix(accent, 0xFFFFFFFF, 0.45f) & 0x00FFFFFF) | 0x66000000);
         }
         boolean art = ART.equals(mode);
         return new Theme(art ? ART : DARK, false,
                 0xFF0A0F20, 0xFF1D2548, 0xFF0B1224,
                 0x26FFFFFF, 0xF2121829, 0xFF1C2338, 0xFF232B42,
-                0xFFFFFFFF, 0xFF9AA3B8, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF0A0E1A, accent);
+                0xFFFFFFFF, 0xFF9AA3B8, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF0A0E1A, accent,
+                0x665B6CFF, 0x4A19C2B0);
     }
 
     /** Background colours for the Hero art theme, derived from one colour taken from the picture. */
@@ -110,6 +120,13 @@ final class Theme {
                 mix(color, 0xFF000000, 0.45f),
                 mix(color, 0xFF000000, 0.68f),
                 mix(color, 0xFF05070D, 0.85f)};
+    }
+
+    /** The two background glows for the Hero art theme, taken from the colour of the picture. */
+    static int[] artBlobs(int color) {
+        return new int[]{
+                (mix(color, 0xFFFFFFFF, 0.1f) & 0x00FFFFFF) | 0xA0000000,
+                (mix(color, 0xFFFFFFFF, 0.45f) & 0x00FFFFFF) | 0x66000000};
     }
 
     static int mix(int a, int b, float t) {

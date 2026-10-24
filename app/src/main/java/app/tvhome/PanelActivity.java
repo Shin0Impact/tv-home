@@ -52,10 +52,12 @@ public class PanelActivity extends Activity {
 
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(24), dp(28), dp(24), dp(20));
+        panel.setPadding(dp(26), dp(26), dp(26), dp(18));
+        // A floating rounded card with a hairline edge, not a slab glued to the screen edge.
         GradientDrawable bg = new GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM, Theme.grad(th.sheet));
-        bg.setCornerRadii(new float[]{dp(28), dp(28), 0, 0, 0, 0, dp(28), dp(28)});
+        bg.setCornerRadius(dp(32));
+        bg.setStroke(Math.max(1, dp(1)), th.light ? 0x22000000 : 0x26FFFFFF);
         panel.setBackground(bg);
 
         TextView title = new TextView(this);
@@ -63,15 +65,18 @@ public class PanelActivity extends Activity {
         title.setTextColor(th.text);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        title.setPadding(dp(4), 0, 0, dp(14));
+        title.setPadding(dp(4), 0, 0, dp(10));
         panel.addView(title);
 
         ScrollView sv = new ScrollView(this);
         sv.setVerticalScrollBarEnabled(false);
         sv.setClipToPadding(false);
+        sv.setClipChildren(false);
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setClipChildren(false);
+        // Room above the first row so a focused (enlarged) circle is never cut off.
+        content.setPadding(0, dp(14), 0, dp(4));
 
         boolean online = isOnline();
         final Object[][] orbs = {
@@ -94,7 +99,7 @@ public class PanelActivity extends Activity {
                 row.setClipChildren(false);
                 LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                rlp.bottomMargin = dp(10);
+                rlp.bottomMargin = dp(14);
                 content.addView(row, rlp);
             }
             Object[] o = orbs[i];
@@ -108,7 +113,7 @@ public class PanelActivity extends Activity {
         LinearLayout head = new LinearLayout(this);
         head.setOrientation(LinearLayout.HORIZONTAL);
         head.setGravity(Gravity.CENTER_VERTICAL);
-        head.setPadding(dp(4), dp(10), 0, dp(8));
+        head.setPadding(dp(4), dp(14), 0, dp(10));
         TextView nt = new TextView(this);
         nt.setText("Notifications");
         nt.setTextColor(th.text);
@@ -152,12 +157,27 @@ public class PanelActivity extends Activity {
         sv.addView(content);
         panel.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        setContentView(panel);
+        android.widget.FrameLayout frame = new android.widget.FrameLayout(this);
+        frame.setPadding(dp(16), dp(16), dp(16), dp(16));
+        frame.setClipChildren(false);
+        frame.addView(panel, new android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        setContentView(frame);
         Window window = getWindow();
         window.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        window.setLayout(dp(470), ViewGroup.LayoutParams.MATCH_PARENT);
+        window.setLayout(dp(470 + 32), ViewGroup.LayoutParams.MATCH_PARENT);
         window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-        window.setDimAmount(0.55f);
+        window.setDimAmount(0.5f);
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            try {
+                // Blur what is behind the panel where the TV supports it.
+                window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
+                window.getAttributes().setBlurBehindRadius(dp(24));
+                window.setAttributes(window.getAttributes());
+            } catch (Throwable ignored) {
+                // no blur: the dim is enough
+            }
+        }
     }
 
     private void openAction(String action) {
@@ -204,6 +224,8 @@ public class PanelActivity extends Activity {
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             lp.bottomMargin = dp(10);
+            lp.leftMargin = dp(2);
+            lp.rightMargin = dp(2);
             notesBox.addView(card, lp);
         }
     }
@@ -305,7 +327,7 @@ public class PanelActivity extends Activity {
         cell.setGravity(Gravity.CENTER_HORIZONTAL);
         cell.setFocusable(true);
         cell.setClickable(true);
-        cell.setPadding(0, dp(4), 0, dp(6));
+        cell.setPadding(0, dp(6), 0, dp(6));
 
         final View disc = new View(this) {
             @Override
@@ -322,7 +344,7 @@ public class PanelActivity extends Activity {
                 Icons.draw(cv, icon, w / 2, h / 2, Math.min(w, h) * 0.9f, ink, f ? th.focusBg : fill);
             }
         };
-        cell.addView(disc, new LinearLayout.LayoutParams(dp(60), dp(60)));
+        cell.addView(disc, new LinearLayout.LayoutParams(dp(64), dp(64)));
 
         final TextView name = new TextView(this);
         name.setText(label);
@@ -334,15 +356,14 @@ public class PanelActivity extends Activity {
         name.setPadding(dp(2), dp(6), dp(2), 0);
         cell.addView(name);
 
-        if (!status.isEmpty()) {
-            TextView st = new TextView(this);
-            st.setText(status);
-            st.setTextColor(th.dim);
-            st.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
-            st.setGravity(Gravity.CENTER);
-            st.setSingleLine(true);
-            cell.addView(st);
-        }
+        // Always present (blank when there is no status) so every label lines up.
+        TextView st = new TextView(this);
+        st.setText(status.isEmpty() ? " " : status);
+        st.setTextColor(th.dim);
+        st.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        st.setGravity(Gravity.CENTER);
+        st.setSingleLine(true);
+        cell.addView(st);
 
         cell.setOnFocusChangeListener((v, focused) -> {
             disc.invalidate();
