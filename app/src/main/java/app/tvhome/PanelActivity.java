@@ -87,6 +87,9 @@ public class PanelActivity extends Activity {
         TextView diag = new TextView(this);
         android.content.SharedPreferences sp = getSharedPreferences("home", MODE_PRIVATE);
         StringBuilder info = new StringBuilder(sp.getString("epgdebug", "Apps' rows: not read yet"));
+        if (sp.contains("storedebug")) {
+            info.append("\n").append(sp.getString("storedebug", ""));
+        }
         for (java.util.Map.Entry<String, ?> e : sp.getAll().entrySet()) {
             if (e.getKey().startsWith("mddebug_") && e.getValue() instanceof String) {
                 info.append("\n\n").append((String) e.getValue());

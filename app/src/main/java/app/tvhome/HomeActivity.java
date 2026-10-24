@@ -76,6 +76,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -95,6 +96,8 @@ public class HomeActivity extends Activity {
     private static final int TOP_ROW = 5;
     private static final int GRID_COLS = 7;
     private static final int ROTATE_MS = 7000;
+    private static final String STORE_PKG = "com.android.vending";
+    private static final long STORE_REFRESH_MS = 12L * 3600 * 1000;
     private static final int HISTORY_PER_APP = 4;
     private static final int HISTORY_TOTAL = 40;
 
@@ -119,6 +122,8 @@ public class HomeActivity extends Activity {
         PendingIntent pending;
         MediaController controller;
         Intent intent;
+        /** True for the plain "open this app" card shown when an app has nothing to offer. */
+        boolean base;
     }
 
     /** One card of the hero carousel. Five of them take turns at the positions -2 .. +2. */
@@ -177,6 +182,9 @@ public class HomeActivity extends Activity {
     private List<HeroItem> heroItems = new ArrayList<>();
     /** Watch Next and home-screen row items published by apps, keyed by package. */
     private volatile Map<String, List<HeroItem>> programsByPkg = new HashMap<>();
+    /** Top apps read from Google Play's public pages, shown when the Play Store tile is highlighted. */
+    private volatile List<JSONObject> storeApps = new ArrayList<>();
+    private volatile boolean storeLoading;
 
     private SharedPreferences prefs;
     private float density;
@@ -208,6 +216,8 @@ public class HomeActivity extends Activity {
     private Slot[] slots;
     private View heroRing;
     private App focusedApp;
+    /** The carousel currently shows only a plain app card (no real content). */
+    private boolean heroBase;
     private int heroIdx;
     private String stageApp;
     private int stageIdx = -1;
@@ -232,6 +242,7 @@ public class HomeActivity extends Activity {
             if (focusedApp != null) {
                 int before = heroItems.size();
                 heroItems = buildHeroItems(focusedApp);
+                heroBase = heroItems.size() == 1 && heroItems.get(0).base;
                 if (heroItems.size() != before) {
                     heroIdx = 0;
                     showHero(false);
@@ -249,6 +260,16 @@ public class HomeActivity extends Activity {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences("home", MODE_PRIVATE);
         th = Theme.load(prefs);
+        try {
+            JSONArray cached = new JSONArray(prefs.getString("store_json", "[]"));
+            List<JSONObject> list = new ArrayList<>();
+            for (int i = 0; i < cached.length(); i++) {
+                list.add(cached.getJSONObject(i));
+            }
+            storeApps = list;
+        } catch (Exception ignored) {
+            // no cached store apps
+        }
         density = getResources().getDisplayMetrics().density;
         int screenW = getResources().getDisplayMetrics().widthPixels;
         pad = dp(64);
@@ -626,6 +647,11 @@ public class HomeActivity extends Activity {
 
     /** A focusable tile: a rounded 16:9 card (banner or icon) with a one-line label underneath. */
     private View makeTile(int w, String text, Drawable banner, Drawable icon, boolean accent) {
+        return makeTile(w, text, banner, icon, accent, true);
+    }
+
+    private View makeTile(int w, String text, Drawable banner, Drawable icon, boolean accent,
+                          boolean showLabel) {
         LinearLayout cell = new LinearLayout(this);
         cell.setOrientation(LinearLayout.VERTICAL);
         cell.setFocusable(true);
@@ -662,7 +688,9 @@ public class HomeActivity extends Activity {
         label.setSingleLine(true);
         label.setEllipsize(TextUtils.TruncateAt.END);
         label.setPadding(dp(2), dp(8), dp(2), 0);
-        cell.addView(label, new LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT));
+        if (showLabel) {
+            cell.addView(label, new LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
 
         final GradientDrawable ring = new GradientDrawable();
         ring.setColor(Color.TRANSPARENT);
@@ -681,8 +709,8 @@ public class HomeActivity extends Activity {
         return cell;
     }
 
-    private View makeAppTile(final App a, int w) {
-        final View cell = makeTile(w, a.label, a.banner, a.icon, a.pkg.equals(moveApp));
+    private View makeAppTile(final App a, int w, boolean showLabel) {
+        final View cell = makeTile(w, a.label, a.banner, a.icon, a.pkg.equals(moveApp), showLabel);
         final View.OnFocusChangeListener base = cell.getOnFocusChangeListener();
         cell.setOnFocusChangeListener((v, focused) -> {
             base.onFocusChange(v, focused);
@@ -848,7 +876,7 @@ public class HomeActivity extends Activity {
         s.key = key;
         if (it.art != null) {
             s.art.setTag(null);
-            s.art.setImageBitmap(it.art);
+            setArtBitmap(s.art, it.art);
             s.art.setVisibility(View.VISIBLE);
             s.side.setVisibility(View.GONE);
         } else if (it.artUri != null) {
@@ -1062,12 +1090,22 @@ public class HomeActivity extends Activity {
     }
 
     private void applyHeroApp(App a) {
+        if (STORE_PKG.equals(a.pkg)) {
+            maybeLoadStore();
+        }
         if (focusedApp != null && focusedApp.pkg.equals(a.pkg) && !heroItems.isEmpty()) {
             focusedApp = a;
             return;
         }
+        List<HeroItem> items = buildHeroItems(a);
+        boolean plain = items.size() == 1 && items.get(0).base;
+        if (plain && focusedApp != null && !heroItems.isEmpty() && !heroBase) {
+            // This app has nothing to show: keep the cards of the last app that did.
+            return;
+        }
         focusedApp = a;
-        heroItems = buildHeroItems(a);
+        heroItems = items;
+        heroBase = plain;
         heroIdx = 0;
         showHero(heroRoot != null);
         // Restart the timer so the new app's first card is shown for a full interval.
@@ -1193,6 +1231,38 @@ public class HomeActivity extends Activity {
                 out.add(p);
             }
         }
+        if (STORE_PKG.equals(a.pkg) && prefs.getBoolean("store", true)) {
+            int rank = 0;
+            for (JSONObject o : storeApps) {
+                rank++;
+                HeroItem h = new HeroItem();
+                h.appLabel = a.label;
+                h.title = o.optString("title");
+                String desc = o.optString("desc");
+                h.subtitle = "Top app #" + rank + (desc.isEmpty() ? "" : "  \u00B7  " + desc);
+                String art = o.optString("art");
+                h.artUri = art.isEmpty() ? null : art;
+                h.banner = a.banner;
+                h.icon = a.icon;
+                h.intent = new Intent(Intent.ACTION_VIEW,
+                        Uri.parse("market://details?id=" + o.optString("pkg"))).setPackage(STORE_PKG);
+                out.add(h);
+            }
+        }
+        if (out.isEmpty() && prefs.getBoolean("demo", false)) {
+            // For trying out the carousel: a few sample cards for any app.
+            String[] names = {"Sample card one", "Sample card two", "Sample card three", "Sample card four"};
+            for (String n : names) {
+                HeroItem d = new HeroItem();
+                d.appLabel = a.label;
+                d.title = n;
+                d.subtitle = "Demo, turn off in TV Home settings";
+                d.banner = a.banner;
+                d.icon = a.icon;
+                d.intent = a.launch;
+                out.add(d);
+            }
+        }
         HeroItem base = new HeroItem();
         base.appLabel = a.label;
         base.title = a.label;
@@ -1200,10 +1270,135 @@ public class HomeActivity extends Activity {
         base.banner = a.banner;
         base.icon = a.icon;
         base.intent = a.launch;
+        base.base = true;
         if (out.isEmpty()) {
             out.add(base);
         }
         return out;
+    }
+
+    /** Fetches the Play Store's public top-apps page, then each app's page for its name and picture. */
+    private void maybeLoadStore() {
+        if (!prefs.getBoolean("store", true) || storeLoading || net.isShutdown()) {
+            return;
+        }
+        if (!storeApps.isEmpty()
+                && System.currentTimeMillis() - prefs.getLong("store_at", 0) < STORE_REFRESH_MS) {
+            return;
+        }
+        storeLoading = true;
+        net.execute(() -> {
+            String status = "no page";
+            try {
+                java.util.Locale loc = java.util.Locale.getDefault();
+                String country = loc.getCountry().isEmpty() ? "US" : loc.getCountry();
+                String query = "hl=" + loc.getLanguage() + "&gl=" + country;
+                String page = fetchText("https://play.google.com/store/apps/top?" + query);
+                if (page != null) {
+                    Set<String> ids = new LinkedHashSet<>();
+                    Matcher m = Pattern.compile(
+                            "/store/apps/details\\?id=([A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)+)").matcher(page);
+                    while (m.find() && ids.size() < 10) {
+                        if (!STORE_PKG.equals(m.group(1))) {
+                            ids.add(m.group(1));
+                        }
+                    }
+                    JSONArray out = new JSONArray();
+                    for (String id : ids) {
+                        String html = fetchText("https://play.google.com/store/apps/details?id=" + id + "&" + query);
+                        if (html == null) {
+                            continue;
+                        }
+                        String title = meta(html, "og:title");
+                        if (title == null) {
+                            continue;
+                        }
+                        title = title.replaceAll("\\s+[-\u2013\u2014]\\s+.*Google Play$", "");
+                        JSONObject o = new JSONObject();
+                        o.put("pkg", id);
+                        o.put("title", title);
+                        String img = meta(html, "og:image");
+                        o.put("art", img == null ? "" : img);
+                        String desc = meta(html, "og:description");
+                        if (desc != null && desc.length() > 70) {
+                            desc = desc.substring(0, 67) + "...";
+                        }
+                        o.put("desc", desc == null ? "" : desc.replace('\n', ' '));
+                        out.put(o);
+                    }
+                    status = ids.size() + " links, " + out.length() + " cards";
+                    if (out.length() > 0) {
+                        List<JSONObject> list = new ArrayList<>();
+                        for (int i = 0; i < out.length(); i++) {
+                            list.add(out.getJSONObject(i));
+                        }
+                        storeApps = list;
+                        prefs.edit().putString("store_json", out.toString())
+                                .putLong("store_at", System.currentTimeMillis()).apply();
+                    }
+                }
+            } catch (Exception e) {
+                status = "failed: " + e.getClass().getSimpleName();
+            }
+            prefs.edit().putString("storedebug", "Play Store top apps: " + status).apply();
+            storeLoading = false;
+            ui.post(() -> {
+                // If the Play Store tile is the one highlighted, show the new cards now.
+                if (STORE_PKG.equals(lastFocusPkg) && !storeApps.isEmpty()) {
+                    for (App x : shownApps) {
+                        if (STORE_PKG.equals(x.pkg)) {
+                            focusedApp = null;
+                            applyHeroApp(x);
+                        }
+                    }
+                }
+            });
+        });
+    }
+
+    private String fetchText(String url) {
+        HttpURLConnection conn = null;
+        InputStream in = null;
+        try {
+            if (!url.startsWith("https://")) {
+                return null;
+            }
+            conn = (HttpURLConnection) new URL(url).openConnection();
+            conn.setConnectTimeout(6000);
+            conn.setReadTimeout(10000);
+            conn.setRequestProperty("User-Agent",
+                    "Mozilla/5.0 (Linux; Android 12; TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36");
+            in = conn.getInputStream();
+            byte[] data = readAll(in, 4 * 1024 * 1024);
+            return data == null ? null : new String(data, "UTF-8");
+        } catch (Exception e) {
+            return null;
+        } finally {
+            try {
+                if (in != null) {
+                    in.close();
+                }
+            } catch (IOException ignored) {
+                // closing
+            }
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
+    }
+
+    private static String meta(String html, String prop) {
+        Matcher m = Pattern.compile("<meta[^>]*?(?:property|name)=\"" + prop
+                + "\"[^>]*?content=\"([^\"]*)\"").matcher(html);
+        if (!m.find()) {
+            m = Pattern.compile("<meta[^>]*?content=\"([^\"]*)\"[^>]*?(?:property|name)=\"" + prop
+                    + "\"").matcher(html);
+            if (!m.find()) {
+                return null;
+            }
+        }
+        return m.group(1).replace("&amp;", "&").replace("&quot;", "\"").replace("&#39;", "'")
+                .replace("&lt;", "<").replace("&gt;", ">");
     }
 
     private String rememberedArt(String pkg, String title) {
@@ -1659,7 +1854,7 @@ public class HomeActivity extends Activity {
             panel.setOrientation(LinearLayout.VERTICAL);
             panel.setClipChildren(false);
             panel.setClipToPadding(false);
-            panel.setPadding(dp(20), dp(18), dp(20), dp(10));
+            panel.setPadding(dp(20), dp(18), dp(20), dp(18));
             GradientDrawable panelBg = new GradientDrawable();
             panelBg.setColor(th.panel);
             panelBg.setCornerRadius(dp(28));
@@ -1667,7 +1862,7 @@ public class HomeActivity extends Activity {
 
             LinearLayout top = newRow();
             for (int i = 0; i < topCount; i++) {
-                View cell = makeAppTile(apps.get(i), topW);
+                View cell = makeAppTile(apps.get(i), topW, false); // the first row shows no names
                 LinearLayout.LayoutParams cp = cellParams(topW);
                 if (i == topCount - 1) {
                     cp.rightMargin = 0;
@@ -1696,7 +1891,7 @@ public class HomeActivity extends Activity {
                     rowLp.bottomMargin = dp(18);
                     grid.addView(row, rowLp);
                 }
-                row.addView(makeAppTile(apps.get(i), gridW), cellParams(gridW));
+                row.addView(makeAppTile(apps.get(i), gridW, true), cellParams(gridW));
             }
         }
 
@@ -1738,6 +1933,18 @@ public class HomeActivity extends Activity {
 
     // ---------------------------------------------------------------- images
 
+    /** Wide pictures fill the card; square ones (app icons) sit whole above the text instead. */
+    private void setArtBitmap(ImageView v, Bitmap b) {
+        boolean square = b.getWidth() < b.getHeight() * 13 / 10;
+        v.setScaleType(square ? ImageView.ScaleType.FIT_CENTER : ImageView.ScaleType.CENTER_CROP);
+        if (square) {
+            v.setPadding(dp(40), dp(14), dp(40), dp(78));
+        } else {
+            v.setPadding(0, 0, 0, 0);
+        }
+        v.setImageBitmap(b);
+    }
+
     private void loadImage(final String uri, final ImageView target) {
         if (uri == null || uri.isEmpty()) {
             return;
@@ -1745,7 +1952,7 @@ public class HomeActivity extends Activity {
         target.setTag(uri);
         Bitmap cached = imageCache.get(uri);
         if (cached != null) {
-            target.setImageBitmap(cached);
+            setArtBitmap(target, cached);
             return;
         }
         if (net.isShutdown()) {
@@ -1759,7 +1966,7 @@ public class HomeActivity extends Activity {
             imageCache.put(uri, b);
             ui.post(() -> {
                 if (uri.equals(target.getTag())) {
-                    target.setImageBitmap(b);
+                    setArtBitmap(target, b);
                 }
                 maybeTint(uri, b);
             });
@@ -2066,6 +2273,32 @@ public class HomeActivity extends Activity {
             });
             rows.add(hiddenRow);
         }
+
+        final boolean storeOn = prefs.getBoolean("store", true);
+        TextView storeRow = pill("Play Store top apps  \u00B7  " + (storeOn ? "On" : "Off"));
+        storeRow.setOnClickListener(v -> {
+            prefs.edit().putBoolean("store", !storeOn).apply();
+            stageApp = null;
+            focusedApp = null;
+            heroItems = new ArrayList<>();
+            heroBase = false;
+            d.dismiss();
+            refresh(true);
+        });
+        rows.add(storeRow);
+
+        final boolean demoOn = prefs.getBoolean("demo", false);
+        TextView demoRow = pill("Demo cards  \u00B7  " + (demoOn ? "On" : "Off"));
+        demoRow.setOnClickListener(v -> {
+            prefs.edit().putBoolean("demo", !demoOn).apply();
+            stageApp = null;
+            focusedApp = null;
+            heroItems = new ArrayList<>();
+            heroBase = false;
+            d.dismiss();
+            refresh(true);
+        });
+        rows.add(demoRow);
 
         TextView orderRow = pill("Reset app order");
         orderRow.setOnClickListener(v -> {
