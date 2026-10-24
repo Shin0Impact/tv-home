@@ -731,8 +731,9 @@ public class HomeActivity extends Activity {
             JSONArray hist = new JSONArray(prefs.getString("history", "[]"));
             for (int i = 0; i < hist.length(); i++) {
                 JSONObject o = hist.getJSONObject(i);
-                if (!a.pkg.equals(o.optString("pkg")) || seen.contains(o.optString("title"))) {
-                    continue;
+                if (!a.pkg.equals(o.optString("pkg")) || seen.contains(o.optString("title"))
+                        || o.optString("link").isEmpty()) {
+                    continue; // only remembered titles that open a specific video
                 }
                 HeroItem h = new HeroItem();
                 h.appLabel = a.label;
@@ -803,162 +804,10 @@ public class HomeActivity extends Activity {
         }
     }
 
-    /**
-     * Remembers what apps have played or paused, so it can be shown again after the app stops.
-     * Everything stays on this TV (preferences and a small artwork cache).
-     */
+    /** Also records whatever is active right now (the background listener normally has it already). */
     private void recordHistory() {
-        List<MediaController> list = sessions();
-        if (list.isEmpty()) {
-            return;
-        }
-        try {
-            JSONArray arr = new JSONArray(prefs.getString("history", "[]"));
-            List<JSONObject> items = new ArrayList<>();
-            for (int i = 0; i < arr.length(); i++) {
-                items.add(arr.getJSONObject(i));
-            }
-            boolean changed = false;
-            for (MediaController c : list) {
-                MediaMetadata md = c.getMetadata();
-                String pkg = c.getPackageName();
-                if (md == null || pkg == null) {
-                    continue;
-                }
-                String title = firstNonEmpty(md.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE),
-                        md.getString(MediaMetadata.METADATA_KEY_TITLE));
-                if (title == null) {
-                    continue;
-                }
-                String detail = firstNonEmpty(md.getString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE),
-                        md.getString(MediaMetadata.METADATA_KEY_ARTIST));
-                String art = firstNonEmpty(md.getString(MediaMetadata.METADATA_KEY_ART_URI),
-                        md.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI),
-                        md.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI));
-                String link = null;
-                if (pkg.contains("youtube")) {
-                    storeMetadataDebug(md);
-                    String vid = findVideoId(md);
-                    if (vid != null) {
-                        link = "https://www.youtube.com/watch?v=" + vid;
-                        if (art == null) {
-                            art = "https://i.ytimg.com/vi/" + vid + "/hqdefault.jpg";
-                        }
-                    }
-                }
-                if (art == null) {
-                    Bitmap b = firstBitmap(md.getBitmap(MediaMetadata.METADATA_KEY_ART),
-                            md.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART),
-                            md.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON));
-                    if (b != null) {
-                        art = saveArt(b, pkg, title);
-                    }
-                }
-                JSONObject old = null;
-                for (JSONObject o : items) {
-                    if (pkg.equals(o.optString("pkg")) && title.equals(o.optString("title"))) {
-                        old = o;
-                        break;
-                    }
-                }
-                if (art == null && old != null && !old.optString("art").isEmpty()) {
-                    art = old.optString("art");
-                }
-                if (link == null && old != null && !old.optString("link").isEmpty()) {
-                    link = old.optString("link");
-                }
-                if (old != null && items.indexOf(old) == 0
-                        && (art == null ? "" : art).equals(old.optString("art"))) {
-                    continue; // already the newest entry, nothing new
-                }
-                if (old != null) {
-                    items.remove(old);
-                }
-                JSONObject entry = new JSONObject();
-                entry.put("pkg", pkg);
-                entry.put("title", title);
-                entry.put("sub", detail == null ? "" : detail);
-                entry.put("art", art == null ? "" : art);
-                entry.put("link", link == null ? "" : link);
-                items.add(0, entry);
-                changed = true;
-            }
-            if (!changed) {
-                return;
-            }
-            // Keep a few per app and a limited total.
-            Map<String, Integer> perApp = new HashMap<>();
-            JSONArray out = new JSONArray();
-            for (JSONObject o : items) {
-                String p = o.optString("pkg");
-                int n = perApp.containsKey(p) ? perApp.get(p) : 0;
-                if (n >= HISTORY_PER_APP || out.length() >= HISTORY_TOTAL) {
-                    continue;
-                }
-                perApp.put(p, n + 1);
-                out.put(o);
-            }
-            prefs.edit().putString("history", out.toString()).apply();
-        } catch (Exception ignored) {
-            // history is a nicety; never let it break the home screen
-        }
-    }
-
-    private static final Pattern VIDEO_LINK =
-            Pattern.compile("(?:[?&]v=|youtu\\.be/|/vi/|/embed/|/shorts/)([A-Za-z0-9_-]{11})");
-    private static final Pattern VIDEO_ID = Pattern.compile("[A-Za-z0-9_-]{11}");
-
-    /** Looks through what YouTube reports for something that identifies the video. */
-    private String findVideoId(MediaMetadata md) {
-        String mediaId = md.getString(MediaMetadata.METADATA_KEY_MEDIA_ID);
-        if (mediaId != null && VIDEO_ID.matcher(mediaId).matches()) {
-            return mediaId;
-        }
-        for (String key : md.keySet()) {
-            String v = md.getString(key);
-            if (v == null) {
-                continue;
-            }
-            Matcher m = VIDEO_LINK.matcher(v);
-            if (m.find()) {
-                return m.group(1);
-            }
-        }
-        return null;
-    }
-
-    /** What the media app reports, for the diagnostics line in the quick settings panel. */
-    private void storeMetadataDebug(MediaMetadata md) {
-        StringBuilder sb = new StringBuilder("YouTube reports:");
-        for (String key : md.keySet()) {
-            String v = md.getString(key);
-            String shortKey = key.substring(key.lastIndexOf('.') + 1);
-            sb.append("\n").append(shortKey).append(" = ")
-                    .append(v == null ? "(not text)" : v.length() > 40 ? v.substring(0, 40) + "..." : v);
-        }
-        prefs.edit().putString("mddebug", sb.toString()).apply();
-    }
-
-    private String saveArt(Bitmap b, String pkg, String title) {
-        try {
-            File dir = new File(getCacheDir(), "art");
-            if (!dir.exists() && !dir.mkdirs()) {
-                return null;
-            }
-            File f = new File(dir, Integer.toHexString((pkg + "|" + title).hashCode()) + ".jpg");
-            Bitmap scaled = b;
-            if (b.getWidth() > 960) {
-                scaled = Bitmap.createScaledBitmap(b, 960, Math.max(1, b.getHeight() * 960 / b.getWidth()), true);
-            }
-            FileOutputStream out = new FileOutputStream(f);
-            try {
-                scaled.compress(Bitmap.CompressFormat.JPEG, 85, out);
-            } finally {
-                out.close();
-            }
-            return Uri.fromFile(f).toString();
-        } catch (Exception e) {
-            return null;
+        for (MediaController c : sessions()) {
+            History.record(this, c);
         }
     }
 
@@ -1345,8 +1194,8 @@ public class HomeActivity extends Activity {
         int shown = 0;
         for (JSONObject o : hist) {
             final App src = byPkg.get(o.optString("pkg"));
-            if (src == null) {
-                continue; // app is hidden or uninstalled
+            if (src == null || o.optString("link").isEmpty()) {
+                continue; // hidden/uninstalled app, or nothing that opens a specific video
             }
             final Intent open = intentFor(o.optString("link"), src);
             View cell = makeTile(topW, o.optString("title"), null,
