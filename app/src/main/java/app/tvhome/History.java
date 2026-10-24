@@ -47,15 +47,23 @@ final class History {
         try {
             MediaMetadata md = c.getMetadata();
             String pkg = c.getPackageName();
-            if (md == null || pkg == null) {
-                return;
-            }
-            String title = firstNonEmpty(md.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE),
-                    md.getString(MediaMetadata.METADATA_KEY_TITLE));
-            if (title == null) {
+            if (pkg == null) {
                 return;
             }
             SharedPreferences prefs = ctx.getSharedPreferences("home", Context.MODE_PRIVATE);
+            String title = md == null ? null : firstNonEmpty(md.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE),
+                    md.getString(MediaMetadata.METADATA_KEY_TITLE));
+            if (title == null) {
+                // Apps like Netflix never say what is playing; remember only that something was
+                // paused or playing, and how far in, so the card survives the app closing.
+                android.media.session.PlaybackState st = c.getPlaybackState();
+                if (st != null && (st.getState() == android.media.session.PlaybackState.STATE_PAUSED
+                        || st.getState() == android.media.session.PlaybackState.STATE_PLAYING)) {
+                    prefs.edit().putString("resume_" + pkg,
+                            st.getPosition() + "|" + System.currentTimeMillis()).apply();
+                }
+                return;
+            }
             storeDebug(prefs, pkg, md);
 
             String detail = firstNonEmpty(md.getString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE),

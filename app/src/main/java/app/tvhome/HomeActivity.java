@@ -768,12 +768,42 @@ public class HomeActivity extends Activity {
             it.artUri = firstNonEmpty(md.getString(MediaMetadata.METADATA_KEY_ART_URI),
                     md.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI),
                     md.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI));
+            if (it.art == null && it.artUri == null) {
+                // The app dropped the picture while paused: reuse the one remembered for this title.
+                it.artUri = rememberedArt(a.pkg, title);
+            }
             it.banner = a.banner;
             it.icon = a.icon;
             it.pending = c.getSessionActivity();
             it.controller = c;
             it.intent = a.launch;
             out.add(it);
+        }
+        if (out.isEmpty()) {
+            // No live session (app closed since): offer the last resume point we saw.
+            String r = prefs.getString("resume_" + a.pkg, null);
+            if (r != null && r.contains("|")) {
+                try {
+                    long pos = Long.parseLong(r.substring(0, r.indexOf('|')));
+                    long when = Long.parseLong(r.substring(r.indexOf('|') + 1));
+                    if (System.currentTimeMillis() - when < 14L * 24 * 3600 * 1000) {
+                        long sec = Math.max(0, pos / 1000);
+                        String clock = sec >= 3600
+                                ? String.format(java.util.Locale.US, "%d:%02d:%02d", sec / 3600, sec / 60 % 60, sec % 60)
+                                : String.format(java.util.Locale.US, "%d:%02d", sec / 60, sec % 60);
+                        HeroItem last = new HeroItem();
+                        last.appLabel = a.label;
+                        last.title = "Continue watching";
+                        last.subtitle = "Last stopped at " + clock + "  ·  press OK to open";
+                        last.banner = a.banner;
+                        last.icon = a.icon;
+                        last.intent = a.launch;
+                        out.add(last);
+                    }
+                } catch (NumberFormatException ignored) {
+                    // bad record: skip
+                }
+            }
         }
         // Titles remembered from earlier playback in this app (live ones above take priority).
         Set<String> seen = new HashSet<>();
@@ -824,6 +854,22 @@ public class HomeActivity extends Activity {
             out.add(base);
         }
         return out;
+    }
+
+    private String rememberedArt(String pkg, String title) {
+        try {
+            JSONArray hist = new JSONArray(prefs.getString("history", "[]"));
+            for (int i = 0; i < hist.length(); i++) {
+                JSONObject o = hist.getJSONObject(i);
+                if (pkg.equals(o.optString("pkg")) && title.equals(o.optString("title"))
+                        && !o.optString("art").isEmpty()) {
+                    return o.optString("art");
+                }
+            }
+        } catch (Exception ignored) {
+            // nothing remembered
+        }
+        return null;
     }
 
     /**
