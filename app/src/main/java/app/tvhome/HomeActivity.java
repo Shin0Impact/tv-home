@@ -158,7 +158,14 @@ public class HomeActivity extends Activity {
     private int heroH;
     private ScrollView scroll;
     private LinearLayout grid;
+    private View headerView;
     private TextView unhideBtn;
+    private App pendingHeroApp;
+    private final Runnable heroSwitch = () -> {
+        if (pendingHeroApp != null) {
+            applyHeroApp(pendingHeroApp);
+        }
+    };
     private View firstCell;
     private String lastKey = "";
     private Dialog openDialog;
@@ -236,7 +243,7 @@ public class HomeActivity extends Activity {
         dismissDialog();
         if (moveApp != null) {
             moveApp = null;
-            refresh(true);
+            rerender();
         }
         animateScroll(scroll, "scrollY", 0);
         if (firstCell != null) {
@@ -263,7 +270,7 @@ public class HomeActivity extends Activity {
                             || key == KeyEvent.KEYCODE_BACK) {
                         focusAfter = moveApp;
                         moveApp = null;
-                        refresh(true);
+                        rerender();
                     } else {
                         moveSelected(key);
                     }
@@ -312,13 +319,16 @@ public class HomeActivity extends Activity {
 
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
-        column.setPadding(pad, dp(32), pad, 0);
         column.setClipChildren(false);
         column.setClipToPadding(false);
 
+        // The header scrolls with the content (it is the first child of the grid), so it never
+        // shows through behind the tiles.
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(0, dp(32), 0, dp(8));
+        headerView = header;
 
         LinearLayout clockBox = new LinearLayout(this);
         clockBox.setOrientation(LinearLayout.VERTICAL);
@@ -357,16 +367,18 @@ public class HomeActivity extends Activity {
         scroll.setClipChildren(false);
         scroll.setClipToPadding(false);
         scroll.setVerticalScrollBarEnabled(false);
-        scroll.setPadding(0, dp(12), 0, dp(48));
+        scroll.setPadding(0, 0, 0, dp(48));
 
+        // Side padding lives on the grid (not outside the scroller) so a focused, enlarged tile at
+        // the left or right edge is not cut off.
         grid = new LinearLayout(this);
         grid.setOrientation(LinearLayout.VERTICAL);
         grid.setClipChildren(false);
+        grid.setClipToPadding(false);
+        grid.setPadding(pad, 0, pad, 0);
         scroll.addView(grid, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        column.addView(header, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         column.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         root.addView(column, new FrameLayout.LayoutParams(
@@ -610,8 +622,19 @@ public class HomeActivity extends Activity {
         }
     }
 
+    /** Called on every focus change; waits for focus to settle so fast scrolling doesn't flicker. */
     private void setHeroApp(App a) {
+        pendingHeroApp = a;
+        ui.removeCallbacks(heroSwitch);
+        if (focusedApp != null && focusedApp.pkg.equals(a.pkg)) {
+            return;
+        }
+        ui.postDelayed(heroSwitch, 450);
+    }
+
+    private void applyHeroApp(App a) {
         if (focusedApp != null && focusedApp.pkg.equals(a.pkg) && !heroItems.isEmpty()) {
+            focusedApp = a;
             return;
         }
         focusedApp = a;
@@ -1005,10 +1028,16 @@ public class HomeActivity extends Activity {
         firstCell = null;
         scrollAnims.clear();
 
-        grid.addView(buildHero(), new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, heroH));
-        ((LinearLayout.LayoutParams) heroRoot.getLayoutParams()).bottomMargin = dp(24);
-        ((LinearLayout.LayoutParams) heroRoot.getLayoutParams()).topMargin = dp(8);
+        grid.addView(headerView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        if (heroRoot == null) {
+            buildHero();
+        }
+        LinearLayout.LayoutParams heroLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, heroH);
+        heroLp.topMargin = dp(8);
+        heroLp.bottomMargin = dp(24);
+        grid.addView(heroRoot, heroLp);
 
         int topCount = Math.min(TOP_ROW, apps.size());
         if (topCount > 0) {
@@ -1052,16 +1081,8 @@ public class HomeActivity extends Activity {
                 }
             }
         }
-        heroItems = new ArrayList<>();
-        App start = focusedApp != null ? focusedApp : (apps.isEmpty() ? null : apps.get(0));
-        if (start != null) {
-            App prev = focusedApp;
-            focusedApp = null;
-            setHeroApp(start);
-            if (prev != null) {
-                focusedApp = start;
-            }
-            showHero(false);
+        if (focusedApp == null && !apps.isEmpty()) {
+            applyHeroApp(apps.get(0));
         }
 
         View target = focusAfter != null ? tiles.get(focusAfter) : null;
@@ -1242,8 +1263,21 @@ public class HomeActivity extends Activity {
         cur.remove(i);
         cur.add(j, moveApp);
         saveListPref("order", cur);
+        // Rebuild from what is already in memory: no package scan, no image loading, so it is quick.
+        Map<String, App> byPkg = new HashMap<>();
+        for (App a : shownApps) {
+            byPkg.put(a.pkg, a);
+        }
+        List<App> next = new ArrayList<>();
+        for (String p : cur) {
+            next.add(byPkg.get(p));
+        }
         focusAfter = moveApp;
-        refresh(true);
+        render(next);
+    }
+
+    private void rerender() {
+        render(new ArrayList<>(shownApps));
     }
 
     /** The quick settings side panel, opened by the remote's Settings button or the Settings pill. */
