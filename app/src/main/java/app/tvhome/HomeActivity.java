@@ -156,6 +156,7 @@ public class HomeActivity extends Activity {
     private TextView unhideBtn;
     private View firstCell;
     private String lastKey = "";
+    private AlertDialog openDialog;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -182,10 +183,28 @@ public class HomeActivity extends Activity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        // Home pressed while already on the home screen: jump back to the top.
+        // Home pressed while already on the home screen: close any menu and jump back to the top.
+        dismissDialog();
         animateScroll(scroll, "scrollY", 0);
         if (firstCell != null) {
             firstCell.requestFocus();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        dismissDialog();
+    }
+
+    private void dismissDialog() {
+        if (openDialog != null) {
+            try {
+                openDialog.dismiss();
+            } catch (Exception ignored) {
+                // already gone
+            }
+            openDialog = null;
         }
     }
 
@@ -929,7 +948,8 @@ public class HomeActivity extends Activity {
     private void showMenu(final App a) {
         final boolean isPinned = listPref("pinned").contains(a.pkg);
         final String[] items = {isPinned ? "Unpin" : "Pin to front", "Hide from home", "App info"};
-        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+        dismissDialog();
+        openDialog = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle(a.label)
                 .setItems(items, (dialog, which) -> {
                     if (which == 0) {
@@ -963,10 +983,12 @@ public class HomeActivity extends Activity {
                 Settings.ACTION_SOUND_SETTINGS, Settings.ACTION_BLUETOOTH_SETTINGS,
                 Settings.ACTION_INPUT_METHOD_SETTINGS, Settings.ACTION_SYNC_SETTINGS,
                 Settings.ACTION_SETTINGS};
+        dismissDialog();
         AlertDialog dialog = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle("Quick settings")
                 .setItems(names, (d, which) -> safeStart(new Intent(actions[which])))
                 .create();
+        openDialog = dialog;
         dialog.show();
         Window window = dialog.getWindow();
         if (window != null) {
