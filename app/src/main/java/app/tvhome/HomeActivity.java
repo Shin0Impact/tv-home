@@ -2,21 +2,27 @@ package app.tvhome;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Outline;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.media.tv.TvContract;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.text.TextUtils;
+import android.util.LruCache;
 import android.util.TypedValue;
 import android.view.FocusFinder;
 import android.view.Gravity;
@@ -24,6 +30,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -31,6 +38,12 @@ import android.widget.TextClock;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -42,13 +55,19 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * A deliberately small TV home screen: a dark background, a clock, and a grid of your apps.
- * No ads, no recommendations, no network access, no background work. The only animation is a
- * short scale on the focused tile.
+ * A deliberately small TV home screen in the spirit of tvOS:
+ * a row of large app tiles, a "Continue watching" shelf fed by the standard Android TV
+ * Watch Next list (hidden when empty), and the rest of your apps below.
+ * No ads, no accounts, no analytics. The only network use is downloading poster images that
+ * installed apps themselves list in Watch Next, over HTTPS.
  */
 public class HomeActivity extends Activity {
 
-    private static final int COLUMNS = 6;
+    private static final int TOP_ROW = 5;
+    private static final int GRID_COLS = 7;
+    private static final int SHELF_VISIBLE = 4;
+    private static final int MAX_PROGRAMS = 10;
+
     private static final int CARD_COLOR = 0xFF1C2338;
     private static final int PILL_COLOR = 0xFF232B42;
     private static final int TEXT_DIM = 0xFF9AA3B8;
@@ -62,12 +81,56 @@ public class HomeActivity extends Activity {
         Drawable icon;
     }
 
+    private static class Program {
+        String title;
+        String image;
+        Intent intent;
+    }
+
+    /** ScrollView that only moves focus between tiles and never nudges the bare padding. */
+    private static class VScroll extends ScrollView {
+        VScroll(Context c) {
+            super(c);
+        }
+
+        @Override
+        public boolean arrowScroll(int direction) {
+            return moveFocusOnly(this, direction);
+        }
+    }
+
+    /** Same idea for horizontal shelves. */
+    private static class HScroll extends HorizontalScrollView {
+        HScroll(Context c) {
+            super(c);
+        }
+
+        @Override
+        public boolean arrowScroll(int direction) {
+            return moveFocusOnly(this, direction);
+        }
+    }
+
+    private static boolean moveFocusOnly(ViewGroup self, int direction) {
+        View current = self.findFocus();
+        if (current == self) {
+            current = null;
+        }
+        View next = FocusFinder.getInstance().findNextFocus(self, current, direction);
+        return next != null && next.requestFocus(direction);
+    }
+
     private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private final ExecutorService net = Executors.newFixedThreadPool(2);
     private final Handler ui = new Handler(Looper.getMainLooper());
+    private final LruCache<String, Bitmap> imageCache = new LruCache<>(24);
+
     private SharedPreferences prefs;
     private float density;
-    private int tileW;
-    private int tileH;
+    private int gap;
+    private int topW;
+    private int gridW;
+    private int shelfW;
     private ScrollView scroll;
     private LinearLayout grid;
     private TextView unhideBtn;
@@ -81,8 +144,11 @@ public class HomeActivity extends Activity {
         density = getResources().getDisplayMetrics().density;
         int screenW = getResources().getDisplayMetrics().widthPixels;
         int pad = dp(64);
-        tileW = (screenW - 2 * pad - (COLUMNS - 1) * dp(16)) / COLUMNS;
-        tileH = tileW * 9 / 16;
+        gap = dp(16);
+        int avail = screenW - 2 * pad;
+        topW = (avail - (TOP_ROW - 1) * gap) / TOP_ROW;
+        gridW = (avail - (GRID_COLS - 1) * gap) / GRID_COLS;
+        shelfW = (avail - (SHELF_VISIBLE - 1) * gap) / SHELF_VISIBLE;
         setContentView(buildRoot(pad));
     }
 
@@ -111,6 +177,7 @@ public class HomeActivity extends Activity {
     protected void onDestroy() {
         super.onDestroy();
         io.shutdown();
+        net.shutdown();
     }
 
     // ---------------------------------------------------------------- layout
@@ -164,26 +231,13 @@ public class HomeActivity extends Activity {
         settingsBtn.setOnClickListener(v -> safeStart(new Intent(Settings.ACTION_SETTINGS)));
         header.addView(settingsBtn, pillParams());
 
-        // App grid.
-        scroll = new ScrollView(this) {
-            @Override
-            public boolean arrowScroll(int direction) {
-                // Only ever move focus between tiles. The stock behaviour nudges the view by a few
-                // pixels when there is no tile left in that direction, which is the "hitch" at the
-                // very top and bottom. Returning false lets focus move on to the header buttons.
-                View current = findFocus();
-                if (current == this) {
-                    current = null;
-                }
-                View next = FocusFinder.getInstance().findNextFocus(this, current, direction);
-                return next != null && next.requestFocus(direction);
-            }
-        };
+        // Content: top row, shelf, grid.
+        scroll = new VScroll(this);
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         scroll.setClipChildren(false);
         scroll.setClipToPadding(false);
         scroll.setVerticalScrollBarEnabled(false);
-        scroll.setPadding(0, dp(28), 0, dp(48));
+        scroll.setPadding(0, dp(20), 0, dp(48));
 
         grid = new LinearLayout(this);
         grid.setOrientation(LinearLayout.VERTICAL);
@@ -226,7 +280,34 @@ public class HomeActivity extends Activity {
         return t;
     }
 
-    private View makeCell(final App a) {
+    private TextView sectionTitle(String text) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setTextColor(Color.WHITE);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+        t.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        t.setPadding(0, dp(24), 0, dp(10));
+        return t;
+    }
+
+    private LinearLayout newRow() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setClipChildren(false);
+        return row;
+    }
+
+    private LinearLayout.LayoutParams cellParams(int w) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.rightMargin = gap;
+        return lp;
+    }
+
+    /**
+     * One focusable tile: a rounded 16:9 card with either a banner, an icon, or a downloaded image,
+     * and a one-line label underneath.
+     */
+    private View makeTile(int w, String text, Drawable banner, Drawable icon, String imageUri) {
         LinearLayout cell = new LinearLayout(this);
         cell.setOrientation(LinearLayout.VERTICAL);
         cell.setFocusable(true);
@@ -248,26 +329,32 @@ public class HomeActivity extends Activity {
         });
 
         ImageView img = new ImageView(this);
-        if (a.banner != null) {
-            img.setImageDrawable(a.banner);
+        if (banner != null) {
+            img.setImageDrawable(banner);
             img.setScaleType(ImageView.ScaleType.CENTER_CROP);
             card.addView(img, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        } else {
-            img.setImageDrawable(a.icon);
+        } else if (icon != null) {
+            img.setImageDrawable(icon);
             img.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            card.addView(img, new FrameLayout.LayoutParams(dp(56), dp(56), Gravity.CENTER));
+            int s = Math.min(dp(64), w / 3);
+            card.addView(img, new FrameLayout.LayoutParams(s, s, Gravity.CENTER));
+        } else {
+            img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            card.addView(img, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            loadImage(imageUri, img);
         }
-        cell.addView(card, new LinearLayout.LayoutParams(tileW, tileH));
+        cell.addView(card, new LinearLayout.LayoutParams(w, w * 9 / 16));
 
         final TextView label = new TextView(this);
-        label.setText(a.label);
+        label.setText(text);
         label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         label.setTextColor(TEXT_DIM);
         label.setSingleLine(true);
         label.setEllipsize(TextUtils.TruncateAt.END);
         label.setPadding(dp(2), dp(8), dp(2), 0);
-        cell.addView(label, new LinearLayout.LayoutParams(tileW, ViewGroup.LayoutParams.WRAP_CONTENT));
+        cell.addView(label, new LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         final GradientDrawable ring = new GradientDrawable();
         ring.setColor(Color.TRANSPARENT);
@@ -280,6 +367,11 @@ public class HomeActivity extends Activity {
             float s = focused ? 1.08f : 1f;
             v.animate().scaleX(s).scaleY(s).setDuration(110).start();
         });
+        return cell;
+    }
+
+    private View makeAppTile(final App a, int w) {
+        View cell = makeTile(w, a.label, a.banner, a.icon, null);
         cell.setOnClickListener(v -> safeStart(a.launch));
         cell.setOnLongClickListener(v -> {
             showMenu(a);
@@ -290,25 +382,29 @@ public class HomeActivity extends Activity {
 
     // ------------------------------------------------------------------ data
 
-    /** Re-reads the app list on a background thread; only rebuilds the UI if something changed. */
+    /** Re-reads apps and Watch Next on a background thread; only rebuilds the UI if something changed. */
     private void refresh(final boolean force) {
         if (io.isShutdown()) {
             return;
         }
         io.execute(() -> {
             PackageManager pm = getPackageManager();
+            final List<Program> programs = queryPrograms();
             StringBuilder key = new StringBuilder();
             for (App a : queryApps(pm, false)) {
                 key.append(a.pkg).append(',');
             }
-            key.append('|').append(prefs.getString("pinned", ""));
+            key.append('|').append(prefs.getString("pinned", "")).append('|');
+            for (Program p : programs) {
+                key.append(p.title).append(p.image).append(';');
+            }
             final String k = key.toString();
             if (!force && k.equals(lastKey)) {
                 return;
             }
             final List<App> full = queryApps(pm, true);
             lastKey = k;
-            ui.post(() -> render(full));
+            ui.post(() -> render(full, programs));
         });
     }
 
@@ -358,6 +454,52 @@ public class HomeActivity extends Activity {
         return list;
     }
 
+    /**
+     * Reads the standard Android TV "Watch Next" list. Needs READ_EPG_DATA to be granted
+     * (see README); without it this simply returns nothing and the shelf stays hidden.
+     */
+    private List<Program> queryPrograms() {
+        List<Program> out = new ArrayList<>();
+        Cursor c = null;
+        try {
+            c = getContentResolver().query(
+                    TvContract.WatchNextPrograms.CONTENT_URI,
+                    new String[]{
+                            TvContract.WatchNextPrograms.COLUMN_TITLE,
+                            TvContract.WatchNextPrograms.COLUMN_THUMBNAIL_URI,
+                            TvContract.WatchNextPrograms.COLUMN_POSTER_ART_URI,
+                            TvContract.WatchNextPrograms.COLUMN_INTENT_URI},
+                    null, null,
+                    TvContract.WatchNextPrograms.COLUMN_LAST_ENGAGEMENT_TIME_UTC_MILLIS + " DESC");
+            if (c == null) {
+                return out;
+            }
+            while (c.moveToNext() && out.size() < MAX_PROGRAMS) {
+                String intentUri = c.getString(3);
+                if (intentUri == null) {
+                    continue;
+                }
+                Program p = new Program();
+                p.title = c.getString(0) == null ? "" : c.getString(0);
+                String thumb = c.getString(1);
+                p.image = (thumb != null && !thumb.isEmpty()) ? thumb : c.getString(2);
+                try {
+                    p.intent = Intent.parseUri(intentUri, Intent.URI_INTENT_SCHEME);
+                } catch (URISyntaxException e) {
+                    continue;
+                }
+                out.add(p);
+            }
+        } catch (Exception e) {
+            // Permission not granted or provider unavailable: no shelf.
+        } finally {
+            if (c != null) {
+                c.close();
+            }
+        }
+        return out;
+    }
+
     private List<String> pinnedList() {
         List<String> out = new ArrayList<>();
         for (String s : prefs.getString("pinned", "").split(",")) {
@@ -368,36 +510,152 @@ public class HomeActivity extends Activity {
         return out;
     }
 
-    private void render(List<App> apps) {
+    private void render(List<App> apps, List<Program> programs) {
         grid.removeAllViews();
         firstCell = null;
-        LinearLayout row = null;
-        int gap = dp(16);
-        for (int i = 0; i < apps.size(); i++) {
-            if (i % COLUMNS == 0) {
-                row = new LinearLayout(this);
-                row.setOrientation(LinearLayout.HORIZONTAL);
-                row.setClipChildren(false);
-                LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                rowLp.bottomMargin = dp(20);
-                grid.addView(row, rowLp);
-            }
-            View cell = makeCell(apps.get(i));
-            LinearLayout.LayoutParams cellLp = new LinearLayout.LayoutParams(
-                    tileW, ViewGroup.LayoutParams.WRAP_CONTENT);
-            cellLp.rightMargin = gap;
-            row.addView(cell, cellLp);
+
+        // Row 1: the first few apps (pinned ones first), large.
+        int topCount = Math.min(TOP_ROW, apps.size());
+        LinearLayout top = newRow();
+        for (int i = 0; i < topCount; i++) {
+            View cell = makeAppTile(apps.get(i), topW);
+            top.addView(cell, cellParams(topW));
             if (firstCell == null) {
                 firstCell = cell;
             }
         }
+        grid.addView(top, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        // Shelf: Continue watching.
+        if (!programs.isEmpty()) {
+            grid.addView(sectionTitle("Continue watching"));
+            HScroll hs = new HScroll(this);
+            hs.setHorizontalScrollBarEnabled(false);
+            hs.setOverScrollMode(View.OVER_SCROLL_NEVER);
+            hs.setClipChildren(false);
+            hs.setClipToPadding(false);
+            hs.setPadding(0, dp(10), 0, dp(10));
+            LinearLayout shelf = newRow();
+            for (final Program p : programs) {
+                View cell = makeTile(shelfW, p.title, null, null, p.image);
+                cell.setOnClickListener(v -> safeStart(p.intent));
+                shelf.addView(cell, cellParams(shelfW));
+            }
+            hs.addView(shelf, new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            grid.addView(hs, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
+
+        // The rest of the apps, smaller.
+        if (apps.size() > topCount) {
+            grid.addView(sectionTitle("More apps"));
+            LinearLayout row = null;
+            for (int i = topCount; i < apps.size(); i++) {
+                if ((i - topCount) % GRID_COLS == 0) {
+                    row = newRow();
+                    LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                    rowLp.bottomMargin = dp(18);
+                    grid.addView(row, rowLp);
+                }
+                row.addView(makeAppTile(apps.get(i), gridW), cellParams(gridW));
+            }
+        }
+
         Set<String> hidden = prefs.getStringSet("hidden", new HashSet<String>());
         unhideBtn.setText("Show " + hidden.size() + " hidden");
         unhideBtn.setVisibility(hidden.isEmpty() ? View.GONE : View.VISIBLE);
         if (firstCell != null) {
             firstCell.requestFocus();
         }
+    }
+
+    // ---------------------------------------------------------------- images
+
+    private void loadImage(final String uri, final ImageView target) {
+        if (uri == null || uri.isEmpty()) {
+            return;
+        }
+        Bitmap cached = imageCache.get(uri);
+        if (cached != null) {
+            target.setImageBitmap(cached);
+            return;
+        }
+        if (net.isShutdown()) {
+            return;
+        }
+        net.execute(() -> {
+            final Bitmap b = fetch(uri);
+            if (b == null) {
+                return;
+            }
+            imageCache.put(uri, b);
+            ui.post(() -> target.setImageBitmap(b));
+        });
+    }
+
+    /** Only https and content:// are ever opened; plain http is refused. */
+    private Bitmap fetch(String uriStr) {
+        HttpURLConnection conn = null;
+        InputStream in = null;
+        try {
+            Uri uri = Uri.parse(uriStr);
+            String scheme = uri.getScheme();
+            if ("https".equals(scheme)) {
+                conn = (HttpURLConnection) new URL(uriStr).openConnection();
+                conn.setConnectTimeout(5000);
+                conn.setReadTimeout(8000);
+                in = conn.getInputStream();
+            } else if ("content".equals(scheme) || "android.resource".equals(scheme)) {
+                in = getContentResolver().openInputStream(uri);
+            } else {
+                return null;
+            }
+            byte[] data = readAll(in, 3 * 1024 * 1024);
+            if (data == null) {
+                return null;
+            }
+            BitmapFactory.Options bounds = new BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            BitmapFactory.decodeByteArray(data, 0, data.length, bounds);
+            int sample = 1;
+            while (bounds.outWidth / (sample * 2) >= 640) {
+                sample *= 2;
+            }
+            BitmapFactory.Options opts = new BitmapFactory.Options();
+            opts.inSampleSize = sample;
+            return BitmapFactory.decodeByteArray(data, 0, data.length, opts);
+        } catch (Exception e) {
+            return null;
+        } finally {
+            try {
+                if (in != null) {
+                    in.close();
+                }
+            } catch (IOException ignored) {
+                // nothing to do
+            }
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
+    }
+
+    private static byte[] readAll(InputStream in, int max) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buf = new byte[16 * 1024];
+        int total = 0;
+        int n;
+        while ((n = in.read(buf)) > 0) {
+            total += n;
+            if (total > max) {
+                return null;
+            }
+            out.write(buf, 0, n);
+        }
+        return out.toByteArray();
     }
 
     // --------------------------------------------------------------- actions
