@@ -1,5 +1,6 @@
 package app.tvhome;
 
+import android.animation.ObjectAnimator;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
@@ -26,9 +27,13 @@ import android.util.LruCache;
 import android.util.TypedValue;
 import android.view.FocusFinder;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
+import android.view.ViewParent;
+import android.view.Window;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
@@ -46,6 +51,7 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -56,8 +62,8 @@ import java.util.concurrent.Executors;
 
 /**
  * A deliberately small TV home screen in the spirit of tvOS:
- * a row of large app tiles, a "Continue watching" shelf fed by the standard Android TV
- * Watch Next list (hidden when empty), and the rest of your apps below.
+ * a big carousel on top (Continue watching from Android TV's Watch Next list, or your recently used
+ * apps), a row of large app tiles, and the rest of your apps below.
  * No ads, no accounts, no analytics. The only network use is downloading poster images that
  * installed apps themselves list in Watch Next, over HTTPS.
  */
@@ -65,8 +71,8 @@ public class HomeActivity extends Activity {
 
     private static final int TOP_ROW = 5;
     private static final int GRID_COLS = 7;
-    private static final int SHELF_VISIBLE = 4;
-    private static final int MAX_PROGRAMS = 10;
+    private static final int MAX_HERO = 10;
+    private static final int MAX_RECENT = 10;
 
     private static final int CARD_COLOR = 0xFF1C2338;
     private static final int PILL_COLOR = 0xFF232B42;
@@ -83,11 +89,21 @@ public class HomeActivity extends Activity {
 
     private static class Program {
         String title;
+        String pkg;
         String image;
         Intent intent;
     }
 
-    /** ScrollView that only moves focus between tiles and never nudges the bare padding. */
+    /** One card in the big carousel. */
+    private static class Hero {
+        String title;
+        String subtitle;
+        Drawable banner;
+        Drawable icon;
+        String imageUri;
+        Intent intent;
+    }
+
     private static class VScroll extends ScrollView {
         VScroll(Context c) {
             super(c);
@@ -99,7 +115,6 @@ public class HomeActivity extends Activity {
         }
     }
 
-    /** Same idea for horizontal shelves. */
     private static class HScroll extends HorizontalScrollView {
         HScroll(Context c) {
             super(c);
@@ -111,6 +126,10 @@ public class HomeActivity extends Activity {
         }
     }
 
+    /**
+     * Moves focus between tiles and nothing else. Scrolling is done by {@link #ensureVisible}, which
+     * animates smoothly. Returning false at the edges lets focus move on to the header buttons.
+     */
     private static boolean moveFocusOnly(ViewGroup self, int direction) {
         View current = self.findFocus();
         if (current == self) {
@@ -124,13 +143,14 @@ public class HomeActivity extends Activity {
     private final ExecutorService net = Executors.newFixedThreadPool(2);
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final LruCache<String, Bitmap> imageCache = new LruCache<>(24);
+    private final Map<View, ObjectAnimator> scrollAnims = new HashMap<>();
 
     private SharedPreferences prefs;
     private float density;
     private int gap;
     private int topW;
     private int gridW;
-    private int shelfW;
+    private int heroW;
     private ScrollView scroll;
     private LinearLayout grid;
     private TextView unhideBtn;
@@ -148,7 +168,8 @@ public class HomeActivity extends Activity {
         int avail = screenW - 2 * pad;
         topW = (avail - (TOP_ROW - 1) * gap) / TOP_ROW;
         gridW = (avail - (GRID_COLS - 1) * gap) / GRID_COLS;
-        shelfW = (avail - (SHELF_VISIBLE - 1) * gap) / SHELF_VISIBLE;
+        // About two and a quarter cards visible, so the next one peeks in and hints at the carousel.
+        heroW = (int) ((avail - 2 * gap) / 2.25f);
         setContentView(buildRoot(pad));
     }
 
@@ -162,7 +183,7 @@ public class HomeActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         // Home pressed while already on the home screen: jump back to the top.
-        scroll.smoothScrollTo(0, 0);
+        animateScroll(scroll, "scrollY", 0);
         if (firstCell != null) {
             firstCell.requestFocus();
         }
@@ -171,6 +192,22 @@ public class HomeActivity extends Activity {
     @Override
     public void onBackPressed() {
         // This is the home screen, there is nowhere to go back to.
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent e) {
+        if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
+            int key = e.getKeyCode();
+            if (key == KeyEvent.KEYCODE_SETTINGS) {
+                showQuickSettings();
+                return true;
+            }
+            if (key == KeyEvent.KEYCODE_PROFILE_SWITCH) {
+                safeStart(new Intent(Settings.ACTION_SYNC_SETTINGS));
+                return true;
+            }
+        }
+        return super.dispatchKeyEvent(e);
     }
 
     @Override
@@ -190,7 +227,7 @@ public class HomeActivity extends Activity {
 
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
-        column.setPadding(pad, dp(36), pad, 0);
+        column.setPadding(pad, dp(32), pad, 0);
         column.setClipChildren(false);
         column.setClipToPadding(false);
 
@@ -206,7 +243,7 @@ public class HomeActivity extends Activity {
         time.setFormat12Hour("h:mm");
         time.setFormat24Hour("HH:mm");
         time.setTextColor(Color.WHITE);
-        time.setTextSize(TypedValue.COMPLEX_UNIT_SP, 44);
+        time.setTextSize(TypedValue.COMPLEX_UNIT_SP, 40);
         time.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
         clockBox.addView(time);
 
@@ -214,7 +251,7 @@ public class HomeActivity extends Activity {
         date.setFormat12Hour("EEEE, d MMMM");
         date.setFormat24Hour("EEEE, d MMMM");
         date.setTextColor(TEXT_DIM);
-        date.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        date.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         clockBox.addView(date);
 
         header.addView(clockBox, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -231,13 +268,13 @@ public class HomeActivity extends Activity {
         settingsBtn.setOnClickListener(v -> safeStart(new Intent(Settings.ACTION_SETTINGS)));
         header.addView(settingsBtn, pillParams());
 
-        // Content: top row, shelf, grid.
+        // Content: carousel, app row, grid.
         scroll = new VScroll(this);
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         scroll.setClipChildren(false);
         scroll.setClipToPadding(false);
         scroll.setVerticalScrollBarEnabled(false);
-        scroll.setPadding(0, dp(20), 0, dp(48));
+        scroll.setPadding(0, dp(12), 0, dp(48));
 
         grid = new LinearLayout(this);
         grid.setOrientation(LinearLayout.VERTICAL);
@@ -286,7 +323,7 @@ public class HomeActivity extends Activity {
         t.setTextColor(Color.WHITE);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
         t.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        t.setPadding(0, dp(24), 0, dp(10));
+        t.setPadding(0, dp(20), 0, dp(8));
         return t;
     }
 
@@ -303,16 +340,23 @@ public class HomeActivity extends Activity {
         return lp;
     }
 
-    /**
-     * One focusable tile: a rounded 16:9 card with either a banner, an icon, or a downloaded image,
-     * and a one-line label underneath.
-     */
-    private View makeTile(int w, String text, Drawable banner, Drawable icon, String imageUri) {
+    private ViewOutlineProvider rounded(final float radius) {
+        return new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, Outline outline) {
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radius);
+            }
+        };
+    }
+
+    /** A focusable tile: a rounded 16:9 card (banner or icon) with a one-line label underneath. */
+    private View makeTile(int w, String text, Drawable banner, Drawable icon) {
         LinearLayout cell = new LinearLayout(this);
         cell.setOrientation(LinearLayout.VERTICAL);
         cell.setFocusable(true);
         cell.setClickable(true);
         cell.setClipChildren(false);
+        cell.setRevealOnFocusHint(false);
 
         final float radius = dp(12);
         final FrameLayout card = new FrameLayout(this);
@@ -321,12 +365,7 @@ public class HomeActivity extends Activity {
         cardBg.setCornerRadius(radius);
         card.setBackground(cardBg);
         card.setClipToOutline(true);
-        card.setOutlineProvider(new ViewOutlineProvider() {
-            @Override
-            public void getOutline(View view, Outline outline) {
-                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radius);
-            }
-        });
+        card.setOutlineProvider(rounded(radius));
 
         ImageView img = new ImageView(this);
         if (banner != null) {
@@ -334,16 +373,11 @@ public class HomeActivity extends Activity {
             img.setScaleType(ImageView.ScaleType.CENTER_CROP);
             card.addView(img, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        } else if (icon != null) {
+        } else {
             img.setImageDrawable(icon);
             img.setScaleType(ImageView.ScaleType.FIT_CENTER);
             int s = Math.min(dp(64), w / 3);
             card.addView(img, new FrameLayout.LayoutParams(s, s, Gravity.CENTER));
-        } else {
-            img.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            card.addView(img, new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-            loadImage(imageUri, img);
         }
         cell.addView(card, new LinearLayout.LayoutParams(w, w * 9 / 16));
 
@@ -366,18 +400,189 @@ public class HomeActivity extends Activity {
             label.setTextColor(focused ? Color.WHITE : TEXT_DIM);
             float s = focused ? 1.08f : 1f;
             v.animate().scaleX(s).scaleY(s).setDuration(110).start();
+            if (focused) {
+                ensureVisible(v);
+            }
         });
         return cell;
     }
 
     private View makeAppTile(final App a, int w) {
-        View cell = makeTile(w, a.label, a.banner, a.icon, null);
-        cell.setOnClickListener(v -> safeStart(a.launch));
+        View cell = makeTile(w, a.label, a.banner, a.icon);
+        cell.setOnClickListener(v -> launch(a));
         cell.setOnLongClickListener(v -> {
             showMenu(a);
             return true;
         });
         return cell;
+    }
+
+    /** A big carousel card with the title over a dark gradient at the bottom. */
+    private View makeHeroCard(int w, Hero item) {
+        final int h = w * 9 / 16;
+        final FrameLayout card = new FrameLayout(this);
+        card.setFocusable(true);
+        card.setClickable(true);
+        card.setRevealOnFocusHint(false);
+
+        final float radius = dp(18);
+        GradientDrawable bg = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR, new int[]{0xFF26304D, 0xFF161C30});
+        bg.setCornerRadius(radius);
+        card.setBackground(bg);
+        card.setClipToOutline(true);
+        card.setOutlineProvider(rounded(radius));
+
+        ImageView img = new ImageView(this);
+        if (item.banner != null) {
+            img.setImageDrawable(item.banner);
+            img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            card.addView(img, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        } else if (item.icon != null) {
+            img.setImageDrawable(item.icon);
+            img.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            int s = dp(96);
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(s, s, Gravity.CENTER);
+            lp.bottomMargin = dp(24);
+            card.addView(img, lp);
+        } else {
+            img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            card.addView(img, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            loadImage(item.imageUri, img);
+        }
+
+        View scrim = new View(this);
+        scrim.setBackground(new GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM, new int[]{0x00000000, 0xDD000000}));
+        card.addView(scrim, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, h * 50 / 100, Gravity.BOTTOM));
+
+        LinearLayout text = new LinearLayout(this);
+        text.setOrientation(LinearLayout.VERTICAL);
+        text.setPadding(dp(22), 0, dp(22), dp(18));
+        TextView title = new TextView(this);
+        title.setText(item.title);
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        text.addView(title);
+        if (item.subtitle != null && !item.subtitle.isEmpty()) {
+            TextView sub = new TextView(this);
+            sub.setText(item.subtitle);
+            sub.setTextColor(0xFFC3CADB);
+            sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            sub.setSingleLine(true);
+            sub.setEllipsize(TextUtils.TruncateAt.END);
+            text.addView(sub);
+        }
+        card.addView(text, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM));
+
+        final GradientDrawable ring = new GradientDrawable();
+        ring.setColor(Color.TRANSPARENT);
+        ring.setCornerRadius(radius);
+        ring.setStroke(dp(3), Color.WHITE);
+        card.setOnFocusChangeListener((v, focused) -> {
+            card.setForeground(focused ? ring : null);
+            float s = focused ? 1.04f : 1f;
+            v.animate().scaleX(s).scaleY(s).setDuration(110).start();
+            if (focused) {
+                ensureVisible(v);
+            }
+        });
+        final Intent intent = item.intent;
+        card.setOnClickListener(v -> safeStart(intent));
+        return card;
+    }
+
+    // -------------------------------------------------------------- scrolling
+
+    /**
+     * Scrolls just enough to bring the focused tile (and a margin around it) into view, with a short
+     * eased animation. The stock behaviour jumps instantly, which felt steppy.
+     */
+    private void ensureVisible(View cell) {
+        if (cell.getHeight() == 0 || scroll == null || scroll.getChildCount() == 0) {
+            return; // not laid out yet
+        }
+        View content = scroll.getChildAt(0);
+
+        // Position of the tile inside the scrolling content, and the horizontal scroller it sits in.
+        int top = 0;
+        int left = 0;
+        HScroll hs = null;
+        boolean foundHs = false;
+        View w = cell;
+        while (true) {
+            top += w.getTop();
+            if (!foundHs) {
+                left += w.getLeft();
+            }
+            ViewParent pp = w.getParent();
+            if (!(pp instanceof View)) {
+                break;
+            }
+            View p = (View) pp;
+            if (p instanceof HScroll && !foundHs) {
+                hs = (HScroll) p;
+                foundHs = true;
+            }
+            if (p == scroll) {
+                break;
+            }
+            w = p;
+        }
+
+        // Vertical.
+        int topInScroll = top + scroll.getPaddingTop();
+        int bottomInScroll = topInScroll + cell.getHeight();
+        int viewTop = scroll.getScrollY();
+        int viewH = scroll.getHeight();
+        int maxY = Math.max(0, content.getHeight() + scroll.getPaddingTop()
+                + scroll.getPaddingBottom() - viewH);
+        int targetY = viewTop;
+        if (topInScroll - dp(80) < viewTop) {
+            targetY = topInScroll - dp(80);
+        } else if (bottomInScroll + dp(48) > viewTop + viewH) {
+            targetY = bottomInScroll + dp(48) - viewH;
+        }
+        targetY = Math.max(0, Math.min(targetY, maxY));
+        if (targetY != viewTop) {
+            animateScroll(scroll, "scrollY", targetY);
+        }
+
+        // Horizontal (inside a carousel).
+        if (hs != null && hs.getChildCount() > 0) {
+            int viewL = hs.getScrollX();
+            int viewW = hs.getWidth();
+            int maxX = Math.max(0, hs.getChildAt(0).getWidth() - viewW);
+            int targetX = viewL;
+            if (left - dp(8) < viewL) {
+                targetX = left - dp(8);
+            } else if (left + cell.getWidth() + dp(8) > viewL + viewW) {
+                targetX = left + cell.getWidth() + dp(8) - viewW;
+            }
+            targetX = Math.max(0, Math.min(targetX, maxX));
+            if (targetX != viewL) {
+                animateScroll(hs, "scrollX", targetX);
+            }
+        }
+    }
+
+    private void animateScroll(View scroller, String property, int to) {
+        ObjectAnimator old = scrollAnims.get(scroller);
+        if (old != null) {
+            old.cancel();
+        }
+        ObjectAnimator anim = ObjectAnimator.ofInt(scroller, property, to);
+        anim.setDuration(190);
+        anim.setInterpolator(new DecelerateInterpolator());
+        scrollAnims.put(scroller, anim);
+        anim.start();
     }
 
     // ------------------------------------------------------------------ data
@@ -389,12 +594,13 @@ public class HomeActivity extends Activity {
         }
         io.execute(() -> {
             PackageManager pm = getPackageManager();
-            final List<Program> programs = queryPrograms();
+            final List<Program> programs = queryPrograms(pm);
             StringBuilder key = new StringBuilder();
             for (App a : queryApps(pm, false)) {
                 key.append(a.pkg).append(',');
             }
-            key.append('|').append(prefs.getString("pinned", "")).append('|');
+            key.append('|').append(prefs.getString("pinned", ""));
+            key.append('|').append(prefs.getString("recent", "")).append('|');
             for (Program p : programs) {
                 key.append(p.title).append(p.image).append(';');
             }
@@ -436,7 +642,7 @@ public class HomeActivity extends Activity {
             }
         }
         List<App> list = new ArrayList<>(map.values());
-        final List<String> pinned = pinnedList();
+        final List<String> pinned = listPref("pinned");
         Collections.sort(list, (x, y) -> {
             int px = pinned.indexOf(x.pkg);
             int py = pinned.indexOf(y.pkg);
@@ -456,9 +662,9 @@ public class HomeActivity extends Activity {
 
     /**
      * Reads the standard Android TV "Watch Next" list. Needs READ_EPG_DATA to be granted
-     * (see README); without it this simply returns nothing and the shelf stays hidden.
+     * (see README); without it this simply returns nothing.
      */
-    private List<Program> queryPrograms() {
+    private List<Program> queryPrograms(PackageManager pm) {
         List<Program> out = new ArrayList<>();
         Cursor c = null;
         try {
@@ -468,13 +674,14 @@ public class HomeActivity extends Activity {
                             TvContract.WatchNextPrograms.COLUMN_TITLE,
                             TvContract.WatchNextPrograms.COLUMN_THUMBNAIL_URI,
                             TvContract.WatchNextPrograms.COLUMN_POSTER_ART_URI,
-                            TvContract.WatchNextPrograms.COLUMN_INTENT_URI},
+                            TvContract.WatchNextPrograms.COLUMN_INTENT_URI,
+                            TvContract.WatchNextPrograms.COLUMN_PACKAGE_NAME},
                     null, null,
                     TvContract.WatchNextPrograms.COLUMN_LAST_ENGAGEMENT_TIME_UTC_MILLIS + " DESC");
             if (c == null) {
                 return out;
             }
-            while (c.moveToNext() && out.size() < MAX_PROGRAMS) {
+            while (c.moveToNext() && out.size() < MAX_HERO) {
                 String intentUri = c.getString(3);
                 if (intentUri == null) {
                     continue;
@@ -483,6 +690,7 @@ public class HomeActivity extends Activity {
                 p.title = c.getString(0) == null ? "" : c.getString(0);
                 String thumb = c.getString(1);
                 p.image = (thumb != null && !thumb.isEmpty()) ? thumb : c.getString(2);
+                p.pkg = c.getString(4);
                 try {
                     p.intent = Intent.parseUri(intentUri, Intent.URI_INTENT_SCHEME);
                 } catch (URISyntaxException e) {
@@ -491,7 +699,7 @@ public class HomeActivity extends Activity {
                 out.add(p);
             }
         } catch (Exception e) {
-            // Permission not granted or provider unavailable: no shelf.
+            // Permission not granted or provider unavailable: no Watch Next data.
         } finally {
             if (c != null) {
                 c.close();
@@ -500,9 +708,9 @@ public class HomeActivity extends Activity {
         return out;
     }
 
-    private List<String> pinnedList() {
+    private List<String> listPref(String key) {
         List<String> out = new ArrayList<>();
-        for (String s : prefs.getString("pinned", "").split(",")) {
+        for (String s : prefs.getString(key, "").split(",")) {
             if (!s.isEmpty()) {
                 out.add(s);
             }
@@ -510,41 +718,93 @@ public class HomeActivity extends Activity {
         return out;
     }
 
+    private void saveListPref(String key, List<String> list) {
+        prefs.edit().putString(key, TextUtils.join(",", list)).apply();
+    }
+
+    private void recordRecent(String pkg) {
+        List<String> recent = listPref("recent");
+        recent.remove(pkg);
+        recent.add(0, pkg);
+        while (recent.size() > MAX_RECENT) {
+            recent.remove(recent.size() - 1);
+        }
+        saveListPref("recent", recent);
+    }
+
     private void render(List<App> apps, List<Program> programs) {
         grid.removeAllViews();
         firstCell = null;
+        scrollAnims.clear();
 
-        // Row 1: the first few apps (pinned ones first), large.
-        int topCount = Math.min(TOP_ROW, apps.size());
-        LinearLayout top = newRow();
-        for (int i = 0; i < topCount; i++) {
-            View cell = makeAppTile(apps.get(i), topW);
-            top.addView(cell, cellParams(topW));
-            if (firstCell == null) {
-                firstCell = cell;
+        Map<String, App> byPkg = new HashMap<>();
+        for (App a : apps) {
+            byPkg.put(a.pkg, a);
+        }
+        PackageManager pm = getPackageManager();
+
+        // Big carousel: Watch Next if there is any, otherwise recently used apps.
+        List<Hero> heroes = new ArrayList<>();
+        String heroTitle = "Continue watching";
+        for (Program p : programs) {
+            Hero h = new Hero();
+            h.title = p.title;
+            h.imageUri = p.image;
+            h.intent = p.intent;
+            App src = p.pkg == null ? null : byPkg.get(p.pkg);
+            h.subtitle = src != null ? src.label : "";
+            heroes.add(h);
+        }
+        if (heroes.isEmpty()) {
+            heroTitle = "Recently used";
+            for (String pkg : listPref("recent")) {
+                App a = byPkg.get(pkg);
+                if (a == null || heroes.size() >= MAX_HERO) {
+                    continue;
+                }
+                Hero h = new Hero();
+                h.title = a.label;
+                h.subtitle = "Open app";
+                h.banner = a.banner;
+                h.icon = a.icon;
+                h.intent = a.launch;
+                heroes.add(h);
             }
         }
-        grid.addView(top, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        // Shelf: Continue watching.
-        if (!programs.isEmpty()) {
-            grid.addView(sectionTitle("Continue watching"));
+        if (!heroes.isEmpty()) {
+            grid.addView(sectionTitle(heroTitle));
             HScroll hs = new HScroll(this);
             hs.setHorizontalScrollBarEnabled(false);
             hs.setOverScrollMode(View.OVER_SCROLL_NEVER);
             hs.setClipChildren(false);
             hs.setClipToPadding(false);
             hs.setPadding(0, dp(10), 0, dp(10));
-            LinearLayout shelf = newRow();
-            for (final Program p : programs) {
-                View cell = makeTile(shelfW, p.title, null, null, p.image);
-                cell.setOnClickListener(v -> safeStart(p.intent));
-                shelf.addView(cell, cellParams(shelfW));
+            LinearLayout rowView = newRow();
+            for (final Hero h : heroes) {
+                View card = makeHeroCard(heroW, h);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(heroW, heroW * 9 / 16);
+                lp.rightMargin = gap;
+                rowView.addView(card, lp);
             }
-            hs.addView(shelf, new ViewGroup.LayoutParams(
+            hs.addView(rowView, new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             grid.addView(hs, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
+
+        // Row of large app tiles (pinned apps first).
+        int topCount = Math.min(TOP_ROW, apps.size());
+        if (topCount > 0) {
+            grid.addView(sectionTitle("Apps"));
+            LinearLayout top = newRow();
+            for (int i = 0; i < topCount; i++) {
+                View cell = makeAppTile(apps.get(i), topW);
+                top.addView(cell, cellParams(topW));
+                if (firstCell == null) {
+                    firstCell = cell;
+                }
+            }
+            grid.addView(top, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
 
@@ -567,6 +827,7 @@ public class HomeActivity extends Activity {
         Set<String> hidden = prefs.getStringSet("hidden", new HashSet<String>());
         unhideBtn.setText("Show " + hidden.size() + " hidden");
         unhideBtn.setVisibility(hidden.isEmpty() ? View.GONE : View.VISIBLE);
+        scroll.scrollTo(0, 0);
         if (firstCell != null) {
             firstCell.requestFocus();
         }
@@ -621,7 +882,7 @@ public class HomeActivity extends Activity {
             bounds.inJustDecodeBounds = true;
             BitmapFactory.decodeByteArray(data, 0, data.length, bounds);
             int sample = 1;
-            while (bounds.outWidth / (sample * 2) >= 640) {
+            while (bounds.outWidth / (sample * 2) >= 960) {
                 sample *= 2;
             }
             BitmapFactory.Options opts = new BitmapFactory.Options();
@@ -660,16 +921,24 @@ public class HomeActivity extends Activity {
 
     // --------------------------------------------------------------- actions
 
+    private void launch(App a) {
+        recordRecent(a.pkg);
+        safeStart(a.launch);
+    }
+
     private void showMenu(final App a) {
-        final String[] items = {"Move to front", "Hide from home", "App info"};
+        final boolean isPinned = listPref("pinned").contains(a.pkg);
+        final String[] items = {isPinned ? "Unpin" : "Pin to front", "Hide from home", "App info"};
         new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle(a.label)
                 .setItems(items, (dialog, which) -> {
                     if (which == 0) {
-                        List<String> pinned = pinnedList();
+                        List<String> pinned = listPref("pinned");
                         pinned.remove(a.pkg);
-                        pinned.add(0, a.pkg);
-                        prefs.edit().putString("pinned", TextUtils.join(",", pinned)).apply();
+                        if (!isPinned) {
+                            pinned.add(0, a.pkg);
+                        }
+                        saveListPref("pinned", pinned);
                         refresh(true);
                     } else if (which == 1) {
                         Set<String> hidden = new HashSet<>(
@@ -683,6 +952,27 @@ public class HomeActivity extends Activity {
                     }
                 })
                 .show();
+    }
+
+    /** A simple side panel, opened by the remote's Settings button while TV Home is on screen. */
+    private void showQuickSettings() {
+        final String[] names = {
+                "Network & Internet", "Display", "Sound", "Bluetooth", "Keyboard", "Accounts", "All settings"};
+        final String[] actions = {
+                Settings.ACTION_WIFI_SETTINGS, Settings.ACTION_DISPLAY_SETTINGS,
+                Settings.ACTION_SOUND_SETTINGS, Settings.ACTION_BLUETOOTH_SETTINGS,
+                Settings.ACTION_INPUT_METHOD_SETTINGS, Settings.ACTION_SYNC_SETTINGS,
+                Settings.ACTION_SETTINGS};
+        AlertDialog dialog = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("Quick settings")
+                .setItems(names, (d, which) -> safeStart(new Intent(actions[which])))
+                .create();
+        dialog.show();
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+            window.setLayout(dp(360), ViewGroup.LayoutParams.MATCH_PARENT);
+        }
     }
 
     private void safeStart(Intent intent) {
