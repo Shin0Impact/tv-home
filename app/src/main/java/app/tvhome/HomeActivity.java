@@ -18,6 +18,7 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.TypedValue;
+import android.view.FocusFinder;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -164,7 +165,21 @@ public class HomeActivity extends Activity {
         header.addView(settingsBtn, pillParams());
 
         // App grid.
-        scroll = new ScrollView(this);
+        scroll = new ScrollView(this) {
+            @Override
+            public boolean arrowScroll(int direction) {
+                // Only ever move focus between tiles. The stock behaviour nudges the view by a few
+                // pixels when there is no tile left in that direction, which is the "hitch" at the
+                // very top and bottom. Returning false lets focus move on to the header buttons.
+                View current = findFocus();
+                if (current == this) {
+                    current = null;
+                }
+                View next = FocusFinder.getInstance().findNextFocus(this, current, direction);
+                return next != null && next.requestFocus(direction);
+            }
+        };
+        scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         scroll.setClipChildren(false);
         scroll.setClipToPadding(false);
         scroll.setVerticalScrollBarEnabled(false);
