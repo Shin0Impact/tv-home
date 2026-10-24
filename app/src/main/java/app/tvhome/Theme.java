@@ -127,6 +127,12 @@ final class Theme {
         return new int[]{0, 0};
     }
 
+    /** Black or white, whichever reads better on top of colour c. */
+    static int onColor(int c) {
+        int lum = (((c >> 16) & 0xFF) * 299 + ((c >> 8) & 0xFF) * 587 + (c & 0xFF) * 114) / 1000;
+        return lum > 150 ? 0xFF111318 : 0xFFFFFFFF;
+    }
+
     static int mix(int a, int b, float t) {
         int ar = (a >> 16) & 0xFF;
         int ag = (a >> 8) & 0xFF;

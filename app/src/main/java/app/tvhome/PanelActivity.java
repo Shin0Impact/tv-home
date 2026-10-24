@@ -52,7 +52,7 @@ public class PanelActivity extends Activity {
 
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(26), dp(26), dp(26), dp(18));
+        panel.setPadding(dp(20), dp(20), dp(20), dp(14));
         // A floating rounded card with a hairline edge, not a slab glued to the screen edge.
         GradientDrawable bg = new GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM, Theme.grad(th.sheet));
@@ -63,7 +63,7 @@ public class PanelActivity extends Activity {
         clock.setFormat12Hour("h:mm");
         clock.setFormat24Hour("HH:mm");
         clock.setTextColor(th.text);
-        clock.setTextSize(TypedValue.COMPLEX_UNIT_SP, 40);
+        clock.setTextSize(TypedValue.COMPLEX_UNIT_SP, 30);
         clock.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
         clock.setPadding(dp(4), 0, 0, 0);
         panel.addView(clock);
@@ -71,8 +71,8 @@ public class PanelActivity extends Activity {
         date.setFormat12Hour("EEEE, d MMMM");
         date.setFormat24Hour("EEEE, d MMMM");
         date.setTextColor(th.dim);
-        date.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-        date.setPadding(dp(4), 0, 0, dp(18));
+        date.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        date.setPadding(dp(4), 0, 0, dp(12));
         panel.addView(date);
 
         ScrollView sv = new ScrollView(this);
@@ -106,7 +106,7 @@ public class PanelActivity extends Activity {
                 row.setClipChildren(false);
                 LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                rlp.bottomMargin = dp(12);
+                rlp.bottomMargin = dp(6);
                 content.addView(row, rlp);
             }
             Object[] o = orbs[i];
@@ -124,7 +124,7 @@ public class PanelActivity extends Activity {
         TextView nt = new TextView(this);
         nt.setText("Notifications");
         nt.setTextColor(th.text);
-        nt.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        nt.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         nt.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         head.addView(nt, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         clearBtn = pill("Clear all");
@@ -181,7 +181,7 @@ public class PanelActivity extends Activity {
         setContentView(frame);
         Window window = getWindow();
         window.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        window.setLayout(dp(520), ViewGroup.LayoutParams.MATCH_PARENT);
+        window.setLayout(dp(400), ViewGroup.LayoutParams.MATCH_PARENT);
         window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
         window.setDimAmount(0.5f);
 
@@ -249,7 +249,7 @@ public class PanelActivity extends Activity {
     private View noteCard(final MediaListener.Note n) {
         final LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
-        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        card.setPadding(dp(12), dp(10), dp(12), dp(10));
         card.setFocusable(true);
         card.setClickable(true);
         final GradientDrawable bg = new GradientDrawable(
@@ -263,11 +263,11 @@ public class PanelActivity extends Activity {
         chip.setShape(GradientDrawable.OVAL);
         chip.setColor(th.accent);
         icon.setBackground(chip);
-        icon.setPadding(dp(7), dp(7), dp(7), dp(7));
+        icon.setPadding(dp(6), dp(6), dp(6), dp(6));
         if (n.icon != null) {
             icon.setImageDrawable(n.icon);
         }
-        LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(34), dp(34));
+        LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(28), dp(28));
         ilp.rightMargin = dp(12);
         card.addView(icon, ilp);
 
@@ -276,13 +276,13 @@ public class PanelActivity extends Activity {
         final TextView app = new TextView(this);
         app.setText(n.label);
         app.setTextColor(th.dim);
-        app.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        app.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         app.setSingleLine(true);
         col.addView(app);
         final TextView head = new TextView(this);
         head.setText(n.title == null ? "" : n.title);
         head.setTextColor(th.text);
-        head.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        head.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         head.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         head.setSingleLine(true);
         head.setEllipsize(TextUtils.TruncateAt.END);
@@ -290,7 +290,7 @@ public class PanelActivity extends Activity {
         final TextView body = new TextView(this);
         body.setText(n.text == null ? "" : n.text);
         body.setTextColor(th.dim);
-        body.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        body.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         body.setMaxLines(2);
         body.setEllipsize(TextUtils.TruncateAt.END);
         col.addView(body);
@@ -356,20 +356,20 @@ public class PanelActivity extends Activity {
                     p.setColor(th.ring);
                     cv.drawCircle(w / 2, h / 2, r + dp(2), p);
                 }
-                int ink = on ? Color.WHITE : th.text;
+                int ink = Theme.onColor(fill);
                 Icons.draw(cv, icon, w / 2, h / 2, r * 2f * 0.9f, ink, fill);
             }
         };
-        cell.addView(disc, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        cell.addView(disc, new LinearLayout.LayoutParams(dp(44), dp(44)));
 
         final TextView name = new TextView(this);
         name.setText(label);
         name.setTextColor(th.text);
-        name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         name.setGravity(Gravity.CENTER);
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.END);
-        name.setPadding(dp(2), dp(6), dp(2), 0);
+        name.setPadding(0, dp(4), 0, 0);
         cell.addView(name);
 
         // Always present (blank when there is no status) so every label lines up.

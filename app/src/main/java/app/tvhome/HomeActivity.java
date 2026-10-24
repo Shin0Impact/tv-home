@@ -566,7 +566,7 @@ public class HomeActivity extends Activity {
                 p.setColor(th.ring);
                 cv.drawCircle(w / 2, h / 2, Math.min(w, h) / 2 - dp(2), p);
             }
-            int color = th.text;
+            int color = th.light ? 0xFF111318 : 0xFFFFFFFF;
             if (kind == WIFI && !online) {
                 color = th.dim;
             }
