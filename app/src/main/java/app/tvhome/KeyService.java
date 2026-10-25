@@ -23,6 +23,9 @@ public class KeyService extends AccessibilityService {
     @Override
     protected boolean onKeyEvent(KeyEvent event) {
         int key = event.getKeyCode();
+        if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+            android.util.Log.i("TVHomeKey", "onKeyEvent key=" + key + " menuOpen=" + (overlay != null));
+        }
         if (key == KeyEvent.KEYCODE_HOME && event.getAction() == KeyEvent.ACTION_DOWN
                 && event.getRepeatCount() == 0) {
             // Pressing Home twice quickly jumps back to the app you were just in.
@@ -212,6 +215,9 @@ public class KeyService extends AccessibilityService {
                     + " canDrawOverlays=" + android.provider.Settings.canDrawOverlays(this));
             overlay = holder;
             holder.requestFocus();
+            lastVol = -1;
+            poller.removeCallbacks(pollVolume);
+            poller.post(pollVolume);
             if (!volumeWatching) {
                 try {
                     registerReceiver(volumeReceiver,
@@ -236,6 +242,7 @@ public class KeyService extends AccessibilityService {
         View v = overlay;
         overlay = null;
         settings = null;
+        poller.removeCallbacks(pollVolume);
         if (volumeWatching) {
             try {
                 unregisterReceiver(volumeReceiver);
@@ -279,6 +286,33 @@ public class KeyService extends AccessibilityService {
         }
     }
 
+    // While the menu is open, check the volume a few times a second: if it changed, step aside.
+    private final android.os.Handler poller = new android.os.Handler(android.os.Looper.getMainLooper());
+    private int lastVol = -1;
+    private boolean lastMute;
+    private final Runnable pollVolume = new Runnable() {
+        @Override
+        public void run() {
+            if (overlay == null) {
+                return;
+            }
+            try {
+                android.media.AudioManager am = (android.media.AudioManager) getSystemService(AUDIO_SERVICE);
+                int v = am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC);
+                boolean m = am.isStreamMute(android.media.AudioManager.STREAM_MUSIC);
+                if (lastVol >= 0 && (v != lastVol || m != lastMute)) {
+                    android.util.Log.i("TVHomeKey", "volume poll: " + lastVol + " -> " + v + " mute=" + m);
+                    hideForVolume();
+                }
+                lastVol = v;
+                lastMute = m;
+            } catch (Exception ignored) {
+                // try again next time
+            }
+            poller.postDelayed(this, 250);
+        }
+    };
+
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
@@ -286,6 +320,12 @@ public class KeyService extends AccessibilityService {
             return;
         }
         String pkg = event.getPackageName().toString();
+        if (overlay != null) {
+            android.util.Log.i("TVHomeKey", "window event while menu open: " + pkg + " / " + event.getClassName());
+            if (pkg.startsWith("com.android.systemui") || pkg.equals("android")) {
+                hideForVolume();
+            }
+        }
         if (pkg.equals(getPackageName()) || pkg.equals("android")
                 || pkg.startsWith("com.android.systemui") || pkg.contains("inputmethod")) {
             return;
