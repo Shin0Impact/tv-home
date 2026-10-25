@@ -97,14 +97,15 @@ public class KeyService extends AccessibilityService {
     /** Hides the menu for three seconds so the TV's volume bar can be seen. */
     private void hideForVolume() {
         final View v = overlay;
-        if (v == null) {
+        if (v == null || (settings != null && !settings.coversRight())) {
+            // Nothing to do, or the open settings sit at the bottom and do not cover the volume bar.
             return;
         }
         v.setAlpha(0f);
         v.setVisibility(View.INVISIBLE);
         v.removeCallbacks(showAgain);
         showAgainView = v;
-        v.postDelayed(showAgain, 3000);
+        v.postDelayed(showAgain, 500);
     }
 
     /** Fires whenever the volume changes, even when the remote's volume keys never reach this app. */

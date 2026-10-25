@@ -65,6 +65,11 @@ final class SettingsPanel {
         return host;
     }
 
+    /** True while a card on the right edge is showing, i.e. it could cover the TV's volume bar. */
+    boolean coversRight() {
+        return bar < 0;
+    }
+
     /** Back: from the bottom bar to the list. Returns false when the list itself should close. */
     boolean back() {
         if (inCats) {
