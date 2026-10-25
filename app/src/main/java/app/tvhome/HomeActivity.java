@@ -1966,26 +1966,11 @@ public class HomeActivity extends Activity {
         long dur = fastKeys ? 90 : Math.max(240, Math.min(440, 190 + dist / 3));
         ObjectAnimator anim = ObjectAnimator.ofInt(scroller, property, to);
         anim.setDuration(dur);
-        anim.setInterpolator(new android.view.animation.PathInterpolator(0.2f, 0f, 0f, 1f));
+        // Starts gently and ends gently, so no single frame has to leap a long way.
+        anim.setInterpolator(new android.view.animation.PathInterpolator(0.4f, 0f, 0.2f, 1f));
         scrollAnims.put(scroller, anim);
         if (vertical) {
             scrollEndsAt = android.os.SystemClock.uptimeMillis() + dur;
-            // Draw the whole page once as a picture and just slide that picture while scrolling.
-            final View page = ((ViewGroup) scroller).getChildAt(0);
-            if (page != null) {
-                page.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-                anim.addListener(new android.animation.AnimatorListenerAdapter() {
-                    @Override
-                    public void onAnimationEnd(android.animation.Animator a) {
-                        page.setLayerType(View.LAYER_TYPE_NONE, null);
-                    }
-
-                    @Override
-                    public void onAnimationCancel(android.animation.Animator a) {
-                        page.setLayerType(View.LAYER_TYPE_NONE, null);
-                    }
-                });
-            }
         }
         anim.start();
     }
