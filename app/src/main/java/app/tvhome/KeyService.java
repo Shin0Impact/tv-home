@@ -98,10 +98,26 @@ public class KeyService extends AccessibilityService {
                 }
             };
             final FrameLayout box = holder;
+            // The window is only as wide as the menu, so it never covers the volume bar or the media
+            // controls in the middle of the screen. (It widens when TV Home settings open.)
+            final WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                    (int) (360 * density + 0.5f), ViewGroup.LayoutParams.MATCH_PARENT,
+                    android.provider.Settings.canDrawOverlays(this)
+                            ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                            : WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    PixelFormat.TRANSLUCENT);
+            lp.gravity = Gravity.END;
             final View panel = new QuickPanel(this, this::closePanel, () -> {
                 // Settings open in this same window, over the app, instead of going to the home screen.
                 box.removeAllViews();
                 box.setBackgroundColor(0); // the settings draw their own dim
+                lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
+                try {
+                    wm.updateViewLayout(box, lp);
+                } catch (Exception ignored) {
+                    // keep the narrow window
+                }
                 SettingsPanel sp = new SettingsPanel(this, this::closePanel, () -> {
                     // Change the home screen right away, even while it is behind another app.
                     HomeActivity home = HomeActivity.current;
@@ -114,18 +130,8 @@ public class KeyService extends AccessibilityService {
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
                 box.requestFocus();
             }).build();
-            FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(
-                    (int) (360 * density + 0.5f), ViewGroup.LayoutParams.MATCH_PARENT,
-                    Gravity.END);
-            holder.addView(panel, plp);
-            WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
-                    android.provider.Settings.canDrawOverlays(this)
-                            ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                            : WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                    PixelFormat.TRANSLUCENT);
-            holder.setBackgroundColor(0x80000000);
+            holder.addView(panel, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             try {
                 wm.addView(holder, lp);
             } catch (Exception first) {
