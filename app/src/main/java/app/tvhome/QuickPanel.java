@@ -34,14 +34,17 @@ final class QuickPanel {
 
     private final Context ctx;
     private final Runnable close;
+    /** When set, the TV Home button calls this instead of opening the home screen. */
+    private final Runnable openSettings;
     private final float density;
     private Theme th;
     private LinearLayout notesBox;
     private TextView clearBtn;
 
-    QuickPanel(Context ctx, Runnable close) {
+    QuickPanel(Context ctx, Runnable close, Runnable openSettings) {
         this.ctx = ctx;
         this.close = close;
+        this.openSettings = openSettings;
         this.density = ctx.getResources().getDisplayMetrics().density;
     }
 
@@ -192,6 +195,9 @@ final class QuickPanel {
                     ctx.startActivity(new Intent(Settings.ACTION_DREAM_SETTINGS)
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 }
+            } else if ("app.tvhome.OPEN_SETTINGS".equals(action) && openSettings != null) {
+                openSettings.run();
+                return;
             } else if ("app.tvhome.OPEN_SETTINGS".equals(action)) {
                 ctx.startActivity(new Intent(ctx, HomeActivity.class)
                         .putExtra("settings", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));

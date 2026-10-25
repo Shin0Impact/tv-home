@@ -20,7 +20,7 @@ public class PanelActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         float density = getResources().getDisplayMetrics().density;
-        setContentView(new QuickPanel(this, this::finish).build());
+        setContentView(new QuickPanel(this, this::finish, null).build());
         Window window = getWindow();
         window.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
         window.setLayout((int) (400 * density + 0.5f), ViewGroup.LayoutParams.MATCH_PARENT);

@@ -84,7 +84,15 @@ public class KeyService extends AccessibilityService {
                     return super.dispatchKeyEvent(e);
                 }
             };
-            View panel = new QuickPanel(this, this::closePanel).build();
+            final FrameLayout box = holder;
+            final View panel = new QuickPanel(this, this::closePanel, () -> {
+                // Settings open in this same window, over the app, instead of going to the home screen.
+                box.removeAllViews();
+                SettingsPanel sp = new SettingsPanel(this, this::closePanel, null, null);
+                box.addView(sp.build(), new FrameLayout.LayoutParams(
+                        (int) (400 * density + 0.5f), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END));
+                box.requestFocus();
+            }).build();
             FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(
                     (int) (400 * density + 0.5f), ViewGroup.LayoutParams.MATCH_PARENT,
                     Gravity.END);

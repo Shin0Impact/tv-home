@@ -324,6 +324,15 @@ public class HomeActivity extends Activity {
         onScreen = true;
         visible = this;
         ensureAccess();
+        if (prefs.getBoolean("dirty", false)) {
+            // Settings were changed from the quick settings while another app was open.
+            prefs.edit().remove("dirty").apply();
+            stageApp = null;
+            focusedApp = null;
+            heroItems = new ArrayList<>();
+            heroBase = false;
+            rebuildForTheme();
+        }
         if (openSettingsOnResume) {
             openSettingsOnResume = false;
             if (getIntent() != null) {
@@ -2184,6 +2193,29 @@ public class HomeActivity extends Activity {
 
     /** Rebuilds the whole screen with the colours of the chosen theme. */
     private void applyTheme() {
+        // Freeze what is on screen, rebuild underneath, then fade the old picture away.
+        final ViewGroup decor = (ViewGroup) getWindow().getDecorView();
+        ImageView snap = null;
+        try {
+            if (decor.getWidth() > 0 && decor.getHeight() > 0) {
+                Bitmap shot = Bitmap.createBitmap(decor.getWidth(), decor.getHeight(), Bitmap.Config.ARGB_8888);
+                decor.draw(new Canvas(shot));
+                snap = new ImageView(this);
+                snap.setImageBitmap(shot);
+                decor.addView(snap, new android.widget.FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            }
+        } catch (Throwable ignored) {
+            snap = null; // no fade, just switch
+        }
+        rebuildForTheme();
+        if (snap != null) {
+            final ImageView old = snap;
+            old.animate().alpha(0f).setDuration(450).withEndAction(() -> decor.removeView(old)).start();
+        }
+    }
+
+    private void rebuildForTheme() {
         th = Theme.load(prefs);
         if (tintAnim != null) {
             tintAnim.cancel();
@@ -2201,237 +2233,18 @@ public class HomeActivity extends Activity {
         refresh(true);
     }
 
-    /** A round colour choice in the highlight picker. */
-    private class Swatch extends View {
-        private final int index;
-        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final boolean selected;
-
-        Swatch(Context c, int index, boolean selected) {
-            super(c);
-            this.index = index;
-            this.selected = selected;
-            setFocusable(true);
-            setClickable(true);
-            setOnFocusChangeListener((v, f) -> invalidate());
-        }
-
-        @Override
-        protected void onDraw(Canvas cv) {
-            float w = getWidth();
-            float h = getHeight();
-            float r = Math.min(w, h) / 2 - dp(5);
-            float cx = w / 2;
-            float cy = h / 2;
-            int fill;
-            p.setStyle(Paint.Style.FILL);
-            if (index == 0) {
-                // Default: half light, half dark, since it follows the theme.
-                fill = 0xFFFFFFFF;
-                p.setColor(0xFFFFFFFF);
-                cv.drawCircle(cx, cy, r, p);
-                p.setColor(0xFF1B2030);
-                cv.drawArc(new RectF(cx - r, cy - r, cx + r, cy + r), 90, 180, true, p);
-            } else if (index == 1) {
-                fill = 0xFF000000;
-                p.setColor(0xFF000000);
-                cv.drawCircle(cx, cy, r, p);
-                p.setStyle(Paint.Style.STROKE);
-                p.setStrokeWidth(dp(2));
-                p.setColor(0xFFFFFFFF);
-                cv.drawCircle(cx, cy, r - dp(1), p);
-            } else {
-                fill = Theme.HL_COLORS[index];
-                p.setColor(fill);
-                cv.drawCircle(cx, cy, r, p);
-            }
-            if (selected) {
-                p.setStyle(Paint.Style.STROKE);
-                p.setStrokeWidth(dp(3));
-                p.setStrokeCap(Paint.Cap.ROUND);
-                p.setStrokeJoin(Paint.Join.ROUND);
-                p.setColor(index == 0 ? 0xFF888E9C : Theme.onColor(fill));
-                Path tick = new Path();
-                tick.moveTo(cx - r * 0.35f, cy + r * 0.02f);
-                tick.lineTo(cx - r * 0.08f, cy + r * 0.3f);
-                tick.lineTo(cx + r * 0.4f, cy - r * 0.28f);
-                cv.drawPath(tick, p);
-            }
-            if (isFocused()) {
-                p.setStyle(Paint.Style.STROKE);
-                p.setStrokeWidth(dp(3));
-                p.setColor(th.text);
-                cv.drawCircle(cx, cy, r + dp(4), p);
-            }
-        }
-    }
-
-    private TextView sectionLabel(String text) {
-        TextView t = new TextView(this);
-        t.setText(text);
-        t.setTextColor(th.dim);
-        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        t.setAllCaps(true);
-        t.setLetterSpacing(0.08f);
-        t.setPadding(dp(4), dp(16), 0, dp(8));
-        return t;
-    }
-
-    /**
-     * TV Home's own settings (opened by the sliders icon or the quick settings): theme, content
-     * aware backgrounds, the highlight colour, and the home screen options.
-     */
+    /** TV Home's own settings, shown in a side dialog (the same view the quick settings can draw over an app). */
     private void showHomeSettings(final int focusRow) {
         dismissDialog();
         final Dialog d = new Dialog(this, android.R.style.Theme_Material_NoActionBar);
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(24), dp(24), dp(24), dp(16));
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(th.sheet);
-        bg.setCornerRadii(new float[]{dp(20), dp(20), 0, 0, 0, 0, dp(20), dp(20)});
-        panel.setBackground(bg);
-
-        TextView title = new TextView(this);
-        title.setText("TV Home");
-        title.setTextColor(th.text);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
-        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        title.setPadding(dp(4), 0, 0, dp(4));
-        panel.addView(title);
-
-        ScrollView sv = new ScrollView(this);
-        sv.setVerticalScrollBarEnabled(false);
-        final LinearLayout list = new LinearLayout(this);
-        list.setOrientation(LinearLayout.VERTICAL);
-        sv.addView(list);
-        final List<View> items = new ArrayList<>();
-
-        // Theme.
-        list.addView(sectionLabel("Theme"));
-        for (int i = 0; i < Theme.MODES.length; i++) {
-            final String mode = Theme.MODES[i];
-            boolean on = mode.equals(th.mode);
-            TextView row = pill(Theme.MODE_NAMES[i] + (on ? "   \u2713" : ""));
-            row.setOnClickListener(v -> {
-                prefs.edit().putString("theme", mode).apply();
-                applyTheme();
-                showHomeSettings(items.indexOf(v));
-            });
-            items.add(row);
-            addSettingsRow(list, row, 6);
-        }
-        final boolean awareAllowed = Theme.DARK.equals(th.mode) || Theme.LIGHT.equals(th.mode);
-        final boolean awareOn = prefs.getBoolean("aware", false);
-        TextView aware = pill("Content aware  \u00B7  " + (awareAllowed
-                ? (th.aware ? "On" : "Off") : "Dark and Light only"));
-        aware.setOnClickListener(v -> {
-            if (awareAllowed) {
-                prefs.edit().putBoolean("aware", !awareOn).apply();
-                applyTheme();
-                showHomeSettings(items.indexOf(v));
-            }
-        });
-        items.add(aware);
-        addSettingsRow(list, aware, 6);
-
-        // Highlight colour.
-        list.addView(sectionLabel("Highlight"));
-        final TextView hlName = new TextView(this);
-        hlName.setText(Theme.HL_NAMES[th.hlIndex]);
-        hlName.setTextColor(th.dim);
-        hlName.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        hlName.setPadding(dp(4), dp(4), 0, 0);
-        final int perRow = 5;
-        LinearLayout swRow = null;
-        for (int i = 0; i < Theme.HL_COLORS.length; i++) {
-            if (i % perRow == 0) {
-                swRow = new LinearLayout(this);
-                swRow.setOrientation(LinearLayout.HORIZONTAL);
-                list.addView(swRow, new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            }
-            final int index = i;
-            Swatch sw = new Swatch(this, i, i == th.hlIndex);
-            sw.setOnClickListener(v -> {
-                prefs.edit().putInt("hl", index).apply();
-                applyTheme();
-                showHomeSettings(items.indexOf(v));
-            });
-            sw.setOnFocusChangeListener((v, f) -> {
-                v.invalidate();
-                if (f) {
-                    hlName.setText(Theme.HL_NAMES[index]);
-                }
-            });
-            items.add(sw);
-            swRow.addView(sw, new LinearLayout.LayoutParams(0, dp(58), 1f));
-        }
-        list.addView(hlName);
-
-        // Home screen.
-        list.addView(sectionLabel("Home screen"));
-        Set<String> hidden = prefs.getStringSet("hidden", new HashSet<String>());
-        if (!hidden.isEmpty()) {
-            TextView hiddenRow = pill("Show " + hidden.size() + " hidden apps");
-            hiddenRow.setOnClickListener(v -> {
-                prefs.edit().remove("hidden").apply();
-                d.dismiss();
-                refresh(true);
-            });
-            items.add(hiddenRow);
-            addSettingsRow(list, hiddenRow, 6);
-        }
-
-        final boolean storeOn = prefs.getBoolean("store", true);
-        TextView storeRow = pill("Play Store top apps  \u00B7  " + (storeOn ? "On" : "Off"));
-        storeRow.setOnClickListener(v -> {
-            prefs.edit().putBoolean("store", !storeOn).apply();
+        SettingsPanel sp = new SettingsPanel(this, d::dismiss, this::applyTheme, () -> {
             stageApp = null;
             focusedApp = null;
             heroItems = new ArrayList<>();
             heroBase = false;
-            d.dismiss();
             refresh(true);
         });
-        items.add(storeRow);
-        addSettingsRow(list, storeRow, 6);
-
-        final boolean demoOn = prefs.getBoolean("demo", false);
-        TextView demoRow = pill("Demo cards  \u00B7  " + (demoOn ? "On" : "Off"));
-        demoRow.setOnClickListener(v -> {
-            prefs.edit().putBoolean("demo", !demoOn).apply();
-            stageApp = null;
-            focusedApp = null;
-            heroItems = new ArrayList<>();
-            heroBase = false;
-            d.dismiss();
-            refresh(true);
-        });
-        items.add(demoRow);
-        addSettingsRow(list, demoRow, 6);
-
-        TextView orderRow = pill("Reset app order");
-        orderRow.setOnClickListener(v -> {
-            prefs.edit().remove("order").apply();
-            d.dismiss();
-            refresh(true);
-        });
-        items.add(orderRow);
-        addSettingsRow(list, orderRow, 6);
-
-        TextView done = pill("Done");
-        done.setOnClickListener(v -> d.dismiss());
-        items.add(done);
-        addSettingsRow(list, done, 14);
-
-        panel.addView(sv, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-
-        android.widget.FrameLayout floatFrame = new android.widget.FrameLayout(this);
-        floatFrame.addView(panel, new android.widget.FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        d.setContentView(floatFrame);
+        d.setContentView(sp.build());
         openDialog = d;
         d.show();
         Window window = d.getWindow();
@@ -2442,16 +2255,6 @@ public class HomeActivity extends Activity {
             window.setDimAmount(0.55f);
             window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
         }
-        int row = Math.max(0, Math.min(focusRow, items.size() - 1));
-        items.get(row).requestFocus();
-    }
-
-    private void addSettingsRow(LinearLayout list, TextView row, int gapDp) {
-        row.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.bottomMargin = dp(gapDp);
-        list.addView(row, lp);
     }
 
     private void safeStart(Intent intent) {
