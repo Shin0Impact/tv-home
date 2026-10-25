@@ -2298,7 +2298,7 @@ public class HomeActivity extends Activity {
     }
 
     private void showMenu(final App a) {
-        final String[] items = {"Move", "Hide from home", "App info", "Uninstall"};
+        final String[] items = {"Move", "Hide from home", "App info", "Force stop", "Uninstall"};
         dismissDialog();
         AlertDialog d = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle(a.label)
@@ -2318,6 +2318,16 @@ public class HomeActivity extends Activity {
                     } else if (which == 2) {
                         safeStart(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                                 Uri.parse("package:" + a.pkg)));
+                    } else if (which == 3) {
+                        // Apps cannot truly force-stop each other, but this ends the app's background
+                        // processes and frees its memory, which is what matters on this TV.
+                        try {
+                            ((android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE))
+                                    .killBackgroundProcesses(a.pkg);
+                            Toast.makeText(this, a.label + " stopped", Toast.LENGTH_SHORT).show();
+                        } catch (Exception e) {
+                            Toast.makeText(this, "Could not stop " + a.label, Toast.LENGTH_SHORT).show();
+                        }
                     } else {
                         boolean system = false;
                         try {
