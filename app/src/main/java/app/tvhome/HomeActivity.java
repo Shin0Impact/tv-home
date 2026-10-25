@@ -17,6 +17,7 @@ import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -262,6 +263,8 @@ public class HomeActivity extends Activity {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences("home", MODE_PRIVATE);
         th = Theme.load(prefs);
+        // Opened from the quick settings' TV Home button while this screen was not running.
+        openSettingsOnResume = getIntent() != null && getIntent().getBooleanExtra("settings", false);
         try {
             JSONArray cached = new JSONArray(prefs.getString("store_json", "[]"));
             List<JSONObject> list = new ArrayList<>();
@@ -323,6 +326,9 @@ public class HomeActivity extends Activity {
         ensureAccess();
         if (openSettingsOnResume) {
             openSettingsOnResume = false;
+            if (getIntent() != null) {
+                getIntent().removeExtra("settings");
+            }
             ui.post(() -> showHomeSettings(0));
         }
         if (wifiBtn != null) {
@@ -979,7 +985,7 @@ public class HomeActivity extends Activity {
 
     /** Hero art theme: lets the background take the colour of the card in focus. */
     private void updateTint() {
-        if (!Theme.ART.equals(th.mode) || heroItems.isEmpty() || bgDrawable == null) {
+        if (!th.aware || heroItems.isEmpty() || bgDrawable == null) {
             return;
         }
         final HeroItem it = heroItems.get(Math.min(heroIdx, heroItems.size() - 1));
@@ -998,7 +1004,7 @@ public class HomeActivity extends Activity {
 
     /** A picture finished loading: if it belongs to the card in focus, the background follows it. */
     private void maybeTint(String uri, Bitmap b) {
-        if (!Theme.ART.equals(th.mode) || heroItems.isEmpty()) {
+        if (!th.aware || heroItems.isEmpty()) {
             return;
         }
         HeroItem it = heroItems.get(Math.min(heroIdx, heroItems.size() - 1));
@@ -1056,7 +1062,7 @@ public class HomeActivity extends Activity {
         if (color == 0) {
             return new int[]{th.bgA, th.bgB, th.bgC, th.blobA, th.blobB};
         }
-        int[] bg = Theme.artBackground(color);
+        int[] bg = Theme.artBackground(color, th.light);
         int[] blobs = Theme.artBlobs(color);
         return new int[]{bg[0], bg[1], bg[2], blobs[0], blobs[1]};
     }
@@ -2195,13 +2201,92 @@ public class HomeActivity extends Activity {
         refresh(true);
     }
 
-    /** TV Home's own settings (opened by the sliders icon): theme, accent colour, hidden apps, order. */
+    /** A round colour choice in the highlight picker. */
+    private class Swatch extends View {
+        private final int index;
+        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final boolean selected;
+
+        Swatch(Context c, int index, boolean selected) {
+            super(c);
+            this.index = index;
+            this.selected = selected;
+            setFocusable(true);
+            setClickable(true);
+            setOnFocusChangeListener((v, f) -> invalidate());
+        }
+
+        @Override
+        protected void onDraw(Canvas cv) {
+            float w = getWidth();
+            float h = getHeight();
+            float r = Math.min(w, h) / 2 - dp(5);
+            float cx = w / 2;
+            float cy = h / 2;
+            int fill;
+            p.setStyle(Paint.Style.FILL);
+            if (index == 0) {
+                // Default: half light, half dark, since it follows the theme.
+                fill = 0xFFFFFFFF;
+                p.setColor(0xFFFFFFFF);
+                cv.drawCircle(cx, cy, r, p);
+                p.setColor(0xFF1B2030);
+                cv.drawArc(new RectF(cx - r, cy - r, cx + r, cy + r), 90, 180, true, p);
+            } else if (index == 1) {
+                fill = 0xFF000000;
+                p.setColor(0xFF000000);
+                cv.drawCircle(cx, cy, r, p);
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(dp(2));
+                p.setColor(0xFFFFFFFF);
+                cv.drawCircle(cx, cy, r - dp(1), p);
+            } else {
+                fill = Theme.HL_COLORS[index];
+                p.setColor(fill);
+                cv.drawCircle(cx, cy, r, p);
+            }
+            if (selected) {
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(dp(3));
+                p.setStrokeCap(Paint.Cap.ROUND);
+                p.setStrokeJoin(Paint.Join.ROUND);
+                p.setColor(index == 0 ? 0xFF888E9C : Theme.onColor(fill));
+                Path tick = new Path();
+                tick.moveTo(cx - r * 0.35f, cy + r * 0.02f);
+                tick.lineTo(cx - r * 0.08f, cy + r * 0.3f);
+                tick.lineTo(cx + r * 0.4f, cy - r * 0.28f);
+                cv.drawPath(tick, p);
+            }
+            if (isFocused()) {
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(dp(3));
+                p.setColor(th.text);
+                cv.drawCircle(cx, cy, r + dp(4), p);
+            }
+        }
+    }
+
+    private TextView sectionLabel(String text) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setTextColor(th.dim);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        t.setAllCaps(true);
+        t.setLetterSpacing(0.08f);
+        t.setPadding(dp(4), dp(16), 0, dp(8));
+        return t;
+    }
+
+    /**
+     * TV Home's own settings (opened by the sliders icon or the quick settings): theme, content
+     * aware backgrounds, the highlight colour, and the home screen options.
+     */
     private void showHomeSettings(final int focusRow) {
         dismissDialog();
         final Dialog d = new Dialog(this, android.R.style.Theme_Material_NoActionBar);
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(28), dp(32), dp(28), dp(24));
+        panel.setPadding(dp(24), dp(24), dp(24), dp(16));
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(th.sheet);
         bg.setCornerRadii(new float[]{dp(20), dp(20), 0, 0, 0, 0, dp(20), dp(20)});
@@ -2212,32 +2297,80 @@ public class HomeActivity extends Activity {
         title.setTextColor(th.text);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        title.setPadding(0, 0, 0, dp(16));
+        title.setPadding(dp(4), 0, 0, dp(4));
         panel.addView(title);
 
+        ScrollView sv = new ScrollView(this);
+        sv.setVerticalScrollBarEnabled(false);
         final LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
-        final int accentIdx = Math.max(0, Math.min(prefs.getInt("accent", 0), Theme.ACCENTS.length - 1));
-        final List<TextView> rows = new ArrayList<>();
+        sv.addView(list);
+        final List<View> items = new ArrayList<>();
 
-        TextView themeRow = pill("Theme  \u00B7  " + Theme.modeName(th.mode));
-        themeRow.setOnClickListener(v -> {
-            prefs.edit().putString("theme", Theme.nextMode(th.mode)).apply();
-            applyTheme();
-            showHomeSettings(0);
+        // Theme.
+        list.addView(sectionLabel("Theme"));
+        for (int i = 0; i < Theme.MODES.length; i++) {
+            final String mode = Theme.MODES[i];
+            boolean on = mode.equals(th.mode);
+            TextView row = pill(Theme.MODE_NAMES[i] + (on ? "   \u2713" : ""));
+            row.setOnClickListener(v -> {
+                prefs.edit().putString("theme", mode).apply();
+                applyTheme();
+                showHomeSettings(items.indexOf(v));
+            });
+            items.add(row);
+            addSettingsRow(list, row, 6);
+        }
+        final boolean awareAllowed = Theme.DARK.equals(th.mode) || Theme.LIGHT.equals(th.mode);
+        final boolean awareOn = prefs.getBoolean("aware", false);
+        TextView aware = pill("Content aware  \u00B7  " + (awareAllowed
+                ? (th.aware ? "On" : "Off") : "Dark and Light only"));
+        aware.setOnClickListener(v -> {
+            if (awareAllowed) {
+                prefs.edit().putBoolean("aware", !awareOn).apply();
+                applyTheme();
+                showHomeSettings(items.indexOf(v));
+            }
         });
-        rows.add(themeRow);
+        items.add(aware);
+        addSettingsRow(list, aware, 6);
 
-        TextView accentRow = pill("Colour  \u00B7  " + Theme.ACCENT_NAMES[accentIdx]
-                + (Theme.COLOUR.equals(th.mode) ? "" : "  (Colour theme)"));
-        accentRow.setOnClickListener(v -> {
-            prefs.edit().putInt("accent", (accentIdx + 1) % Theme.ACCENTS.length)
-                    .putString("theme", Theme.COLOUR).apply();
-            applyTheme();
-            showHomeSettings(1);
-        });
-        rows.add(accentRow);
+        // Highlight colour.
+        list.addView(sectionLabel("Highlight"));
+        final TextView hlName = new TextView(this);
+        hlName.setText(Theme.HL_NAMES[th.hlIndex]);
+        hlName.setTextColor(th.dim);
+        hlName.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        hlName.setPadding(dp(4), dp(4), 0, 0);
+        final int perRow = 5;
+        LinearLayout swRow = null;
+        for (int i = 0; i < Theme.HL_COLORS.length; i++) {
+            if (i % perRow == 0) {
+                swRow = new LinearLayout(this);
+                swRow.setOrientation(LinearLayout.HORIZONTAL);
+                list.addView(swRow, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            }
+            final int index = i;
+            Swatch sw = new Swatch(this, i, i == th.hlIndex);
+            sw.setOnClickListener(v -> {
+                prefs.edit().putInt("hl", index).apply();
+                applyTheme();
+                showHomeSettings(items.indexOf(v));
+            });
+            sw.setOnFocusChangeListener((v, f) -> {
+                v.invalidate();
+                if (f) {
+                    hlName.setText(Theme.HL_NAMES[index]);
+                }
+            });
+            items.add(sw);
+            swRow.addView(sw, new LinearLayout.LayoutParams(0, dp(58), 1f));
+        }
+        list.addView(hlName);
 
+        // Home screen.
+        list.addView(sectionLabel("Home screen"));
         Set<String> hidden = prefs.getStringSet("hidden", new HashSet<String>());
         if (!hidden.isEmpty()) {
             TextView hiddenRow = pill("Show " + hidden.size() + " hidden apps");
@@ -2246,7 +2379,8 @@ public class HomeActivity extends Activity {
                 d.dismiss();
                 refresh(true);
             });
-            rows.add(hiddenRow);
+            items.add(hiddenRow);
+            addSettingsRow(list, hiddenRow, 6);
         }
 
         final boolean storeOn = prefs.getBoolean("store", true);
@@ -2260,7 +2394,8 @@ public class HomeActivity extends Activity {
             d.dismiss();
             refresh(true);
         });
-        rows.add(storeRow);
+        items.add(storeRow);
+        addSettingsRow(list, storeRow, 6);
 
         final boolean demoOn = prefs.getBoolean("demo", false);
         TextView demoRow = pill("Demo cards  \u00B7  " + (demoOn ? "On" : "Off"));
@@ -2273,7 +2408,8 @@ public class HomeActivity extends Activity {
             d.dismiss();
             refresh(true);
         });
-        rows.add(demoRow);
+        items.add(demoRow);
+        addSettingsRow(list, demoRow, 6);
 
         TextView orderRow = pill("Reset app order");
         orderRow.setOnClickListener(v -> {
@@ -2281,24 +2417,18 @@ public class HomeActivity extends Activity {
             d.dismiss();
             refresh(true);
         });
-        rows.add(orderRow);
+        items.add(orderRow);
+        addSettingsRow(list, orderRow, 6);
 
         TextView done = pill("Done");
         done.setOnClickListener(v -> d.dismiss());
-        rows.add(done);
+        items.add(done);
+        addSettingsRow(list, done, 14);
 
-        for (TextView row : rows) {
-            row.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp.bottomMargin = dp(10);
-            list.addView(row, lp);
-        }
-        panel.addView(list, new LinearLayout.LayoutParams(
+        panel.addView(sv, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         android.widget.FrameLayout floatFrame = new android.widget.FrameLayout(this);
-        floatFrame.setPadding(0, 0, 0, 0);
         floatFrame.addView(panel, new android.widget.FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         d.setContentView(floatFrame);
@@ -2308,12 +2438,20 @@ public class HomeActivity extends Activity {
         if (window != null) {
             window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             window.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-            window.setLayout(dp(380), ViewGroup.LayoutParams.MATCH_PARENT);
+            window.setLayout(dp(400), ViewGroup.LayoutParams.MATCH_PARENT);
             window.setDimAmount(0.55f);
             window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
         }
-        int row = Math.max(0, Math.min(focusRow, rows.size() - 1));
-        rows.get(row).requestFocus();
+        int row = Math.max(0, Math.min(focusRow, items.size() - 1));
+        items.get(row).requestFocus();
+    }
+
+    private void addSettingsRow(LinearLayout list, TextView row, int gapDp) {
+        row.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = dp(gapDp);
+        list.addView(row, lp);
     }
 
     private void safeStart(Intent intent) {
