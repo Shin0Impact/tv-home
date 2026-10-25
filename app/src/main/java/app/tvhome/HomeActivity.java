@@ -2298,7 +2298,13 @@ public class HomeActivity extends Activity {
     }
 
     private void showMenu(final App a) {
-        final String[] items = {"Move", "Hide from home", "App info", "Force stop", "Uninstall"};
+        showMenu(a, false);
+    }
+
+    /** With armed set, the last row reads a red "Are you sure?" and the next click uninstalls. */
+    private void showMenu(final App a, final boolean armed) {
+        final String[] items = {"Move", "Hide from home", "App info", "Force stop",
+                armed ? "Are you sure?" : "Uninstall"};
         dismissDialog();
         AlertDialog d = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle(a.label)
@@ -2339,6 +2345,8 @@ public class HomeActivity extends Activity {
                         if (system) {
                             Toast.makeText(this, "That is a system app: hide it from home instead",
                                     Toast.LENGTH_LONG).show();
+                        } else if (!armed) {
+                            showMenu(a, true);
                         } else {
                             safeStart(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + a.pkg)));
                         }
@@ -2347,6 +2355,17 @@ public class HomeActivity extends Activity {
                 .create();
         openDialog = d;
         d.show();
+        if (armed) {
+            // Red warning row, already selected so one more OK confirms.
+            final android.widget.ListView lv = d.getListView();
+            lv.setSelection(4);
+            lv.post(() -> {
+                View row = lv.getChildAt(4 - lv.getFirstVisiblePosition());
+                if (row instanceof TextView) {
+                    ((TextView) row).setTextColor(0xFFFF5252);
+                }
+            });
+        }
     }
 
     /** Moves the selected app one step in the given direction, then rebuilds the screen. */
