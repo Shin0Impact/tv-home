@@ -112,6 +112,18 @@ final class SearchDialog {
                 }
             }
             final String query = q;
+            final Intent gs = googleSearch(act, query);
+            if (gs != null) {
+                results.addView(row(act, th, density, "Google TV search for \"" + q + "\"", () -> {
+                    d.dismiss();
+                    try {
+                        act.startActivity(gs);
+                    } catch (Exception e) {
+                        Log.w("TVHomeSearch", "google search failed: " + e);
+                        Toast.makeText(act, "Google search couldn't open", Toast.LENGTH_SHORT).show();
+                    }
+                }));
+            }
             int apps = 0;
             for (int oi = 0; oi < order.size() && apps < 8; oi++) {
                 int i = order.get(oi);
@@ -214,10 +226,7 @@ final class SearchDialog {
     private static final String[][] LINKS = {
             {"org.smarttube.stable", "https://www.youtube.com/results?search_query=%s"},
             {"com.teamsmart.videomanager.tv", "https://www.youtube.com/results?search_query=%s"},
-            {"com.google.android.youtube.tv", "https://www.youtube.com/results?search_query=%s"},
-            {"com.netflix.ninja", "https://www.netflix.com/search?q=%s"},
-            {"com.spotify.tv.android", "spotify:search:%s"},
-            {"com.stremio.one", "stremio:///search?search=%s"}};
+            {"com.google.android.youtube.tv", "https://www.youtube.com/results?search_query=%s"}};
 
     /**
      * package -> how to search in it, for the apps in {@code pkgs}: {"link", template} for the
@@ -314,6 +323,24 @@ final class SearchDialog {
         } catch (Exception e) {
             Log.w("TVHomeSearch", "failed: " + e);
             Toast.makeText(act, "That app couldn't search", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /** Google TV's own search (rows of results from your streaming apps), started with the words typed. */
+    private static Intent googleSearch(Activity act, String query) {
+        try {
+            Intent probe = new Intent("android.search.action.GLOBAL_SEARCH").setPackage("com.google.android.katniss");
+            List<ResolveInfo> found = act.getPackageManager().queryIntentActivities(probe, 0);
+            if (found.isEmpty()) {
+                return null;
+            }
+            ResolveInfo ri = found.get(0);
+            return new Intent("android.search.action.GLOBAL_SEARCH")
+                    .setClassName(ri.activityInfo.packageName, ri.activityInfo.name)
+                    .putExtra(SearchManager.QUERY, query)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        } catch (Exception e) {
+            return null;
         }
     }
 

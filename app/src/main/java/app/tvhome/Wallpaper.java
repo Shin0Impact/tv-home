@@ -20,7 +20,7 @@ final class Wallpaper {
     static final String[] BUILTIN_NAMES = {"Aurora", "Dusk", "Ocean", "Forest", "Ember", "Mist"};
 
     static final String[] SRC_IDS = {"bing", "art", "wiki", "picsum"};
-    static final String[] SRC_NAMES = {"Bing daily", "Artwork of the day", "Wikipedia picture of the day",
+    static final String[] SRC_NAMES = {"Bing daily", "Featured photo", "Wikipedia picture of the day",
             "Random photo"};
 
     /** Dark designs: three gradient colours, then two soft glows. */
@@ -78,7 +78,7 @@ final class Wallpaper {
     }
 
     private static String today() {
-        return new SimpleDateFormat("yyyyMMdd", Locale.US).format(new Date()) + "v3"; // v2: forget pictures saved by older versions
+        return new SimpleDateFormat("yyyyMMdd", Locale.US).format(new Date()) + "v4"; // v2: forget pictures saved by older versions
     }
 
     private static File dir(Context ctx) {
@@ -136,18 +136,27 @@ final class Wallpaper {
                 return u.startsWith("http") ? u : "https://www.bing.com" + u;
             }
             if ("art".equals(src)) {
-                // Public-domain paintings from the Art Institute of Chicago (no key needed); a different one each day.
-                String json = Net.text("https://api.artic.edu/api/v1/artworks/search?q=landscape"
-                        + "&query%5Bterm%5D%5Bis_public_domain%5D=true&fields=id,image_id&limit=60");
+                // A different featured photo from Wikimedia Commons each day (same servers as the Wikipedia picture).
+                String json = Net.text("https://commons.wikimedia.org/w/api.php?action=query&format=json"
+                        + "&generator=categorymembers&gcmtitle=Category:Featured_pictures_on_Wikimedia_Commons"
+                        + "&gcmtype=file&gcmlimit=60&prop=imageinfo&iiprop=url&iiurlwidth=1920");
                 if (json == null) {
                     return null;
                 }
-                org.json.JSONArray data = new JSONObject(json).getJSONArray("data");
+                JSONObject pages = new JSONObject(json).getJSONObject("query").getJSONObject("pages");
+                org.json.JSONArray keys = pages.names();
+                if (keys == null || keys.length() == 0) {
+                    return null;
+                }
                 int day = (int) (System.currentTimeMillis() / 86400000L);
-                for (int k = 0; k < data.length(); k++) {
-                    String id = data.getJSONObject((day + k) % data.length()).optString("image_id", "");
-                    if (!id.isEmpty() && !"null".equals(id)) {
-                        return "https://www.artic.edu/iiif/2/" + id + "/full/1686,/0/default.jpg";
+                for (int k = 0; k < keys.length(); k++) {
+                    JSONObject page = pages.getJSONObject(keys.getString((day * 7 + k) % keys.length()));
+                    org.json.JSONArray info = page.optJSONArray("imageinfo");
+                    if (info != null && info.length() > 0) {
+                        String u = info.getJSONObject(0).optString("thumburl", "");
+                        if (u.startsWith("https://") && !u.endsWith(".svg.png")) {
+                            return u;
+                        }
                     }
                 }
                 return null;
