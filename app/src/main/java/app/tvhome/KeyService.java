@@ -2,6 +2,12 @@ package app.tvhome;
 
 import android.accessibilityservice.AccessibilityService;
 import android.content.Intent;
+import android.graphics.PixelFormat;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.WindowManager;
+import android.widget.FrameLayout;
 import android.provider.Settings;
 import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityEvent;
@@ -35,17 +41,92 @@ public class KeyService extends AccessibilityService {
             return false;
         }
         if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-            Intent open = (profile
-                    ? new Intent(Settings.ACTION_SYNC_SETTINGS)
-                    : new Intent(this, PanelActivity.class))
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (profile) {
+                try {
+                    startActivity(new Intent(Settings.ACTION_SYNC_SETTINGS)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                } catch (Exception ignored) {
+                    // nothing to do
+                }
+            } else {
+                togglePanel();
+            }
+        }
+        return true;
+    }
+
+    private View overlay;
+
+    /**
+     * Shows the quick settings as a window drawn over whatever is on screen. Unlike opening an
+     * activity this does not pause the video underneath. If Android refuses the window, falls back
+     * to the activity version.
+     */
+    private void togglePanel() {
+        if (overlay != null) {
+            closePanel();
+            return;
+        }
+        try {
+            final WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+            final float density = getResources().getDisplayMetrics().density;
+            FrameLayout holder = new FrameLayout(this) {
+                @Override
+                public boolean dispatchKeyEvent(KeyEvent e) {
+                    int code = e.getKeyCode();
+                    if (code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_SETTINGS
+                            || code == KeyEvent.KEYCODE_NOTIFICATION) {
+                        if (e.getAction() == KeyEvent.ACTION_UP) {
+                            closePanel();
+                        }
+                        return true;
+                    }
+                    return super.dispatchKeyEvent(e);
+                }
+            };
+            View panel = new QuickPanel(this, this::closePanel).build();
+            FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(
+                    (int) (400 * density + 0.5f), ViewGroup.LayoutParams.MATCH_PARENT,
+                    Gravity.END);
+            holder.addView(panel, plp);
+            WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_DIM_BEHIND
+                            | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    PixelFormat.TRANSLUCENT);
+            lp.dimAmount = 0.5f;
+            wm.addView(holder, lp);
+            overlay = holder;
+            holder.requestFocus();
+        } catch (Exception e) {
+            overlay = null;
             try {
-                startActivity(open);
+                startActivity(new Intent(this, PanelActivity.class)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             } catch (Exception ignored) {
                 // nothing to do
             }
         }
-        return true;
+    }
+
+    private void closePanel() {
+        View v = overlay;
+        overlay = null;
+        if (v == null) {
+            return;
+        }
+        try {
+            ((WindowManager) getSystemService(WINDOW_SERVICE)).removeView(v);
+        } catch (Exception ignored) {
+            // already gone
+        }
+    }
+
+    @Override
+    public boolean onUnbind(Intent intent) {
+        closePanel();
+        return super.onUnbind(intent);
     }
 
     @Override

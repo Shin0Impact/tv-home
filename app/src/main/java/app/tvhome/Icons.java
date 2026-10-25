@@ -18,6 +18,7 @@ final class Icons {
     static final int MOON = 7;
     static final int PERSON = 8;
     static final int CLOCK = 9;
+    static final int CAST = 10;
 
     private static final Paint P = new Paint(Paint.ANTI_ALIAS_FLAG);
     private static final RectF R = new RectF();
@@ -166,6 +167,30 @@ final class Icons {
                 cv.drawCircle(cx, cy, s * 0.27f, P);
                 cv.drawLine(cx, cy, cx, cy - s * 0.15f, P);
                 cv.drawLine(cx, cy, cx + s * 0.11f, cy + s * 0.06f, P);
+                break;
+            }
+            case CAST: {
+                P.setStyle(Paint.Style.STROKE);
+                P.setStrokeWidth(s * 0.06f);
+                PATH.reset();
+                PATH.moveTo(ox + s * 0.5f, oy + s * 0.3f);
+                PATH.lineTo(ox + s * 0.8f, oy + s * 0.3f);
+                PATH.lineTo(ox + s * 0.8f, oy + s * 0.7f);
+                PATH.lineTo(ox + s * 0.5f, oy + s * 0.7f);
+                cv.drawPath(PATH, P);
+                PATH.reset();
+                PATH.moveTo(ox + s * 0.2f, oy + s * 0.3f);
+                PATH.lineTo(ox + s * 0.5f, oy + s * 0.3f);
+                cv.drawPath(PATH, P);
+                float bx = ox + s * 0.2f;
+                float by = oy + s * 0.7f;
+                for (int n = 1; n <= 3; n++) {
+                    float rad = s * 0.1f * n;
+                    R.set(bx - rad, by - rad, bx + rad, by + rad);
+                    cv.drawArc(R, -90, 90, false, P);
+                }
+                P.setStyle(Paint.Style.FILL);
+                cv.drawCircle(bx, by, s * 0.03f, P);
                 break;
             }
             default:
