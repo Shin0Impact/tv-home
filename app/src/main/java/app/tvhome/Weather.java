@@ -32,7 +32,9 @@ final class Weather {
         if (city(p).isEmpty() || !key(p).equals(p.getString("wx_for", ""))) {
             return "";
         }
-        return p.getString("wx_text", "");
+        String t = p.getString("wx_text", "");
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("-?\\d+°").matcher(t);
+        return m.find() ? m.group() : t; // just the temperature
     }
 
     private static String key(SharedPreferences p) {

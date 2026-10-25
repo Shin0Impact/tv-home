@@ -576,6 +576,17 @@ public class HomeActivity extends Activity {
         header.setPadding(0, dp(24), 0, dp(4));
         headerView = header;
 
+        weatherView = new TextView(this);
+        weatherView.setTextColor(th.dim);
+        weatherView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        weatherView.setSingleLine(true);
+        weatherView.setIncludeFontPadding(false);
+        String wx = Weather.cached(prefs);
+        weatherView.setText(wxLabel(wx));
+        weatherView.setVisibility(wx.isEmpty() ? View.GONE : View.VISIBLE);
+        LinearLayout.LayoutParams wxLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        wxLp.rightMargin = dp(22);
         LinearLayout clockCol = new LinearLayout(this);
         clockCol.setOrientation(LinearLayout.VERTICAL);
         clockCol.setGravity(Gravity.START);
@@ -593,7 +604,14 @@ public class HomeActivity extends Activity {
         date.setTextColor(th.dim);
         date.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         date.setIncludeFontPadding(false);
-        clockCol.addView(date);
+        LinearLayout dateRow = new LinearLayout(this);
+        dateRow.setOrientation(LinearLayout.HORIZONTAL);
+        dateRow.addView(date);
+        weatherView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        wxLp.leftMargin = dp(8);
+        wxLp.rightMargin = 0;
+        dateRow.addView(weatherView, wxLp);
+        clockCol.addView(dateRow);
         LinearLayout.LayoutParams timeLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         timeLp.rightMargin = dp(24);
@@ -621,17 +639,6 @@ public class HomeActivity extends Activity {
         header.addView(unhideBtn, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        weatherView = new TextView(this);
-        weatherView.setTextColor(th.dim);
-        weatherView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-        weatherView.setSingleLine(true);
-        String wx = Weather.cached(prefs);
-        weatherView.setText(wx);
-        weatherView.setVisibility(wx.isEmpty() ? View.GONE : View.VISIBLE);
-        LinearLayout.LayoutParams wxLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        wxLp.rightMargin = dp(22);
-        header.addView(weatherView, wxLp);
 
         IconButton wifi = new IconButton(this, IconButton.WIFI);
         wifi.setOnClickListener(v -> safeStart(new Intent(Settings.ACTION_WIFI_SETTINGS)));
@@ -698,10 +705,10 @@ public class HomeActivity extends Activity {
             float h = getHeight();
             boolean f = isFocused();
             p.setStyle(Paint.Style.FILL);
-            p.setColor(f ? th.focusBg : th.pill);
+            p.setColor(f ? th.focusBg : th.panel); // same material as the first-row panel, so it follows content aware
             cv.drawRoundRect(0, 0, w, h, h / 2, h / 2, p);
             int ink = f ? th.focusText : th.text;
-            Icons.draw(cv, Icons.SEARCH, dp(26), h / 2, dp(36), ink, f ? th.focusBg : th.pill);
+            Icons.draw(cv, Icons.SEARCH, dp(26), h / 2, dp(36), ink, f ? th.focusBg : th.panel);
             p.setColor(f ? th.focusText : th.dim);
             p.setTextSize(dp(15));
             p.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
@@ -2422,17 +2429,21 @@ public class HomeActivity extends Activity {
     }
 
     /** Shows the saved weather text and refreshes it in the background when it is old. */
+    private static String wxLabel(String t) {
+        return t.isEmpty() ? "" : "·  " + t;
+    }
+
     void updateWeather() {
         if (weatherView == null) {
             return;
         }
         String t = Weather.cached(prefs);
-        weatherView.setText(t);
+        weatherView.setText(wxLabel(t));
         weatherView.setVisibility(t.isEmpty() ? View.GONE : View.VISIBLE);
         Weather.refresh(prefs, () -> ui.post(() -> {
             if (weatherView != null) {
                 String now = Weather.cached(prefs);
-                weatherView.setText(now);
+                weatherView.setText(wxLabel(now));
                 weatherView.setVisibility(now.isEmpty() ? View.GONE : View.VISIBLE);
             }
         }));

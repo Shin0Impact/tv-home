@@ -2,6 +2,9 @@ package app.tvhome;
 
 import android.app.Activity;
 import android.app.Dialog;
+import android.app.SearchManager;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
@@ -21,7 +24,9 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Search from the home screen, in the look of the search bar on top: a long rounded field with the
@@ -44,7 +49,15 @@ final class SearchDialog {
 
         LinearLayout box = new LinearLayout(act);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(density, 40), dp(density, 28), dp(density, 40), 0);
+        box.setPadding(dp(density, 48), dp(density, 28), dp(density, 48), dp(density, 20));
+        GradientDrawable sheet = new GradientDrawable();
+        sheet.setColor(th.sheet);
+        sheet.setCornerRadii(new float[]{0, 0, 0, 0, dp(density, 28), dp(density, 28), dp(density, 28), dp(density, 28)});
+        box.setBackground(sheet);
+
+        // Every app on the home screen that can take a search (a standard search, Google's app
+        // search action, or "play from search") gets its own row, so this list builds itself.
+        final Map<String, String> searchable = searchableApps(act, pkgs);
 
         // The field.
         final EditText input = new EditText(act);
@@ -56,18 +69,21 @@ final class SearchDialog {
         input.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
         input.setPadding(dp(density, 24), 0, dp(density, 24), 0);
         GradientDrawable fieldBg = new GradientDrawable();
-        fieldBg.setColor(th.pill);
+        fieldBg.setColor(th.panel);
         fieldBg.setCornerRadius(dp(density, 28));
         fieldBg.setStroke(dp(density, 2), th.ring);
         input.setBackground(fieldBg);
-        box.addView(input, new LinearLayout.LayoutParams(dp(density, 520), dp(density, 52)));
+        box.addView(input, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(density, 52)));
 
         final LinearLayout results = new LinearLayout(act);
         results.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(dp(density, 520),
-                ViewGroup.LayoutParams.WRAP_CONTENT);
+        android.widget.ScrollView sv = new android.widget.ScrollView(act);
+        sv.setVerticalScrollBarEnabled(false);
+        sv.addView(results);
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(density, 300));
         rlp.topMargin = dp(density, 14);
-        box.addView(results, rlp);
+        box.addView(sv, rlp);
 
         final Runnable[] rebuild = new Runnable[1];
         rebuild[0] = () -> {
@@ -89,6 +105,20 @@ final class SearchDialog {
                 }
             }
             final String query = q;
+            int apps = 0;
+            for (int i = 0; i < labels.size() && apps < 8; i++) {
+                final String pkg = pkgs.get(i);
+                final String action = searchable.get(pkg);
+                if (action == null) {
+                    continue;
+                }
+                apps++;
+                results.addView(row(act, th, density,
+                        "Search " + labels.get(i) + " for \"" + q + "\"", () -> {
+                    d.dismiss();
+                    searchIn(act, pkg, action, query);
+                }));
+            }
             results.addView(row(act, th, density, "Search YouTube for \"" + q + "\"", () -> {
                 d.dismiss();
                 view(act, "https://www.youtube.com/results?search_query=" + Uri.encode(query));
@@ -127,6 +157,7 @@ final class SearchDialog {
         if (w != null) {
             w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             w.setGravity(Gravity.TOP | Gravity.START);
+            w.getDecorView().setPadding(0, 0, 0, 0);
             w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             w.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
             w.setDimAmount(0.6f);
@@ -161,6 +192,43 @@ final class SearchDialog {
         lp.bottomMargin = dp(density, 8);
         t.setLayoutParams(lp);
         return t;
+    }
+
+    private static final String[] SEARCH_ACTIONS = {
+            Intent.ACTION_SEARCH,
+            "com.google.android.gms.actions.SEARCH_ACTION",
+            "android.media.action.MEDIA_PLAY_FROM_SEARCH"};
+
+    /** package -> the search action it understands, for the apps in {@code pkgs}. */
+    private static Map<String, String> searchableApps(Activity act, List<String> pkgs) {
+        Map<String, String> found = new HashMap<>();
+        PackageManager pm = act.getPackageManager();
+        for (String action : SEARCH_ACTIONS) {
+            try {
+                for (ResolveInfo ri : pm.queryIntentActivities(new Intent(action), 0)) {
+                    String pkg = ri.activityInfo.packageName;
+                    if (pkgs.contains(pkg) && !pkg.equals(act.getPackageName()) && !found.containsKey(pkg)) {
+                        found.put(pkg, action);
+                    }
+                }
+            } catch (Exception ignored) {
+                // skip this kind of search
+            }
+        }
+        return found;
+    }
+
+    private static void searchIn(Activity act, String pkg, String action, String query) {
+        Intent i = new Intent(action).setPackage(pkg).putExtra(SearchManager.QUERY, query)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        if (action.endsWith("MEDIA_PLAY_FROM_SEARCH")) {
+            i.putExtra("android.intent.extra.focus", "vnd.android.cursor.item/*");
+        }
+        try {
+            act.startActivity(i);
+        } catch (Exception e) {
+            Toast.makeText(act, "That app couldn't search", Toast.LENGTH_SHORT).show();
+        }
     }
 
     static void voice(Activity act) {
