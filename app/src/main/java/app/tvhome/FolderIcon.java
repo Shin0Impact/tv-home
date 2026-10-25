@@ -60,11 +60,24 @@ final class FolderIcon extends Drawable {
                 continue;
             }
             if (wide.get(i)) {
+                // Shrink the banner to fit the cell but keep its own shape (16:9 if it has none).
+                int iw = d.getIntrinsicWidth();
+                int ih = d.getIntrinsicHeight();
+                float ratio = (iw > 0 && ih > 0) ? (float) iw / ih : 16f / 9f;
+                float bw = cw;
+                float bh = bw / ratio;
+                if (bh > ch) {
+                    bh = ch;
+                    bw = bh * ratio;
+                }
+                float bl = left + (cw - bw) / 2f;
+                float bt = top + (ch - bh) / 2f;
+                cell.set(bl, bt, bl + bw, bt + bh);
                 c.save();
                 clip.reset();
                 clip.addRoundRect(cell, radius, radius, Path.Direction.CW);
                 c.clipPath(clip);
-                d.setBounds((int) left, (int) top, (int) (left + cw), (int) (top + ch));
+                d.setBounds((int) bl, (int) bt, (int) (bl + bw), (int) (bt + bh));
                 d.draw(c);
                 c.restore();
             } else {
