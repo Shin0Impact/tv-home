@@ -101,7 +101,7 @@ public class KeyService extends AccessibilityService {
                     if (home != null) {
                         home.applyThemeQuietly();
                     }
-                }, null);
+                }, null, null);
                 box.addView(sp.build(), new FrameLayout.LayoutParams(
                         (int) (400 * density + 0.5f), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END));
                 box.requestFocus();

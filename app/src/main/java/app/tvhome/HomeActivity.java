@@ -203,6 +203,9 @@ public class HomeActivity extends Activity {
     private LinearLayout grid;
     private View headerView;
     private TextView unhideBtn;
+    private TextView weatherView;
+    private ImageView wallView;
+    private View wallScrim;
     private App pendingHeroApp;
     private final Runnable heroSwitch = () -> {
         if (pendingHeroApp != null) {
@@ -327,6 +330,7 @@ public class HomeActivity extends Activity {
         onScreen = true;
         visible = this;
         ensureAccess();
+        updateWeather();
         if (prefs.getBoolean("dirty", false)) {
             // Settings were changed from the quick settings while another app was open.
             prefs.edit().remove("dirty").apply();
@@ -546,6 +550,19 @@ public class HomeActivity extends Activity {
         root.setBackground(bgDrawable);
         tintColor = 0;
 
+        // Optional picture-of-the-day wallpaper, with a theme-coloured veil so text stays readable.
+        wallView = new ImageView(this);
+        wallView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        wallView.setVisibility(View.GONE);
+        root.addView(wallView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        wallScrim = new View(this);
+        wallScrim.setBackgroundColor(th.light ? 0x99FFFFFF
+                : Theme.COLOUR.equals(th.mode) ? ((th.bgB & 0x00FFFFFF) | 0xAA000000) : 0x8C000000);
+        wallScrim.setVisibility(View.GONE);
+        root.addView(wallScrim, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
         column.setClipChildren(false);
@@ -571,16 +588,48 @@ public class HomeActivity extends Activity {
         View spacer = new View(this);
         header.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
 
+        weatherView = new TextView(this);
+        weatherView.setTextColor(th.dim);
+        weatherView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        weatherView.setSingleLine(true);
+        String wx = Weather.cached(prefs);
+        weatherView.setText(wx);
+        weatherView.setVisibility(wx.isEmpty() ? View.GONE : View.VISIBLE);
+        LinearLayout.LayoutParams wxLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        wxLp.rightMargin = dp(22);
+        header.addView(weatherView, wxLp);
+
+        LinearLayout clockCol = new LinearLayout(this);
+        clockCol.setOrientation(LinearLayout.VERTICAL);
+        clockCol.setGravity(Gravity.END);
         TextClock time = new TextClock(this);
         time.setFormat12Hour("h:mm");
         time.setFormat24Hour("HH:mm");
         time.setTextColor(th.text);
-        time.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+        time.setTextSize(TypedValue.COMPLEX_UNIT_SP, 30);
         time.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        time.setIncludeFontPadding(false);
+        clockCol.addView(time);
+        TextClock date = new TextClock(this);
+        date.setFormat12Hour("EEE, d MMM");
+        date.setFormat24Hour("EEE, d MMM");
+        date.setTextColor(th.dim);
+        date.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        date.setIncludeFontPadding(false);
+        clockCol.addView(date);
         LinearLayout.LayoutParams timeLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        timeLp.rightMargin = dp(14);
-        header.addView(time, timeLp);
+        timeLp.rightMargin = dp(18);
+        header.addView(clockCol, timeLp);
+
+        IconButton search = new IconButton(this, Icons.SEARCH);
+        search.setOnClickListener(v -> showSearch());
+        header.addView(search, iconParams());
+
+        IconButton inputs = new IconButton(this, Icons.INPUT);
+        inputs.setOnClickListener(v -> showInputs());
+        header.addView(inputs, iconParams());
 
         IconButton wifi = new IconButton(this, IconButton.WIFI);
         wifi.setOnClickListener(v -> safeStart(new Intent(Settings.ACTION_WIFI_SETTINGS)));
@@ -618,6 +667,10 @@ public class HomeActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         root.addView(column, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        ui.post(() -> {
+            loadWallpaper();
+            updateWeather();
+        });
         return root;
     }
 
@@ -822,6 +875,23 @@ public class HomeActivity extends Activity {
             showMenu(a);
             return true;
         });
+        // A small red dot while the app has a notification showing.
+        View first = ((ViewGroup) cell).getChildAt(0);
+        if (first instanceof FrameLayout) {
+            View dot = new View(this);
+            GradientDrawable dotBg = new GradientDrawable();
+            dotBg.setShape(GradientDrawable.OVAL);
+            dotBg.setColor(0xFFFF4D4D);
+            dotBg.setStroke(dp(2), 0xFFFFFFFF);
+            dot.setBackground(dotBg);
+            dot.setTag("badge");
+            dot.setVisibility(View.GONE);
+            FrameLayout.LayoutParams dlp = new FrameLayout.LayoutParams(dp(16), dp(16),
+                    Gravity.TOP | Gravity.END);
+            dlp.topMargin = dp(8);
+            dlp.rightMargin = dp(8);
+            ((FrameLayout) first).addView(dot, dlp);
+        }
         tiles.put(a.pkg, cell);
         return cell;
     }
@@ -2048,6 +2118,7 @@ public class HomeActivity extends Activity {
             }
         }
         grid.post(() -> grid.setMinimumHeight(0));
+        updateBadges();
     }
 
     // ---------------------------------------------------------------- images
@@ -2171,7 +2242,7 @@ public class HomeActivity extends Activity {
     }
 
     private void showMenu(final App a) {
-        final String[] items = {"Move", "Hide from home", "App info"};
+        final String[] items = {"Move", "Hide from home", "App info", "Uninstall"};
         dismissDialog();
         AlertDialog d = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle(a.label)
@@ -2188,9 +2259,23 @@ public class HomeActivity extends Activity {
                         hidden.add(a.pkg);
                         prefs.edit().putStringSet("hidden", hidden).apply();
                         refresh(true);
-                    } else {
+                    } else if (which == 2) {
                         safeStart(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                                 Uri.parse("package:" + a.pkg)));
+                    } else {
+                        boolean system = false;
+                        try {
+                            system = (getPackageManager().getApplicationInfo(a.pkg, 0).flags
+                                    & android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0;
+                        } catch (Exception ignored) {
+                            // treat as a normal app
+                        }
+                        if (system) {
+                            Toast.makeText(this, "That is a system app: hide it from home instead",
+                                    Toast.LENGTH_LONG).show();
+                        } else {
+                            safeStart(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + a.pkg)));
+                        }
                     }
                 })
                 .create();
@@ -2254,6 +2339,152 @@ public class HomeActivity extends Activity {
 
     private void rerender() {
         render(new ArrayList<>(shownApps));
+    }
+
+    /** Search box (voice, apps, YouTube, web). */
+    private void showSearch() {
+        dismissDialog();
+        List<String> labels = new ArrayList<>();
+        List<String> pkgs = new ArrayList<>();
+        for (App a : shownApps) {
+            labels.add(a.label);
+            pkgs.add(a.pkg);
+        }
+        openDialog = SearchDialog.show(this, labels, pkgs, pkg -> {
+            for (App a : shownApps) {
+                if (a.pkg.equals(pkg)) {
+                    launch(a);
+                }
+            }
+        });
+    }
+
+    /** The TV's inputs (HDMI 1, 2, 3 ...). */
+    private void showInputs() {
+        dismissDialog();
+        openDialog = Inputs.show(this);
+    }
+
+    /** Asks for the city used by the weather line. */
+    private void showCityDialog() {
+        final android.widget.EditText box = new android.widget.EditText(this);
+        box.setSingleLine(true);
+        box.setText(Weather.city(prefs));
+        box.setHint("For example: Haifa");
+        AlertDialog d = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("Weather city")
+                .setView(box)
+                .setPositiveButton("Save", (dialog, which) -> {
+                    prefs.edit().putString("city", box.getText().toString().trim())
+                            .remove("wx_at").remove("wx_for").apply();
+                    updateWeather();
+                })
+                .setNegativeButton("Cancel", null)
+                .create();
+        d.show();
+        box.requestFocus();
+    }
+
+    /** Shows the saved weather text and refreshes it in the background when it is old. */
+    void updateWeather() {
+        if (weatherView == null) {
+            return;
+        }
+        String t = Weather.cached(prefs);
+        weatherView.setText(t);
+        weatherView.setVisibility(t.isEmpty() ? View.GONE : View.VISIBLE);
+        Weather.refresh(prefs, () -> ui.post(() -> {
+            if (weatherView != null) {
+                String now = Weather.cached(prefs);
+                weatherView.setText(now);
+                weatherView.setVisibility(now.isEmpty() ? View.GONE : View.VISIBLE);
+            }
+        }));
+    }
+
+    /** Puts the daily picture behind everything (and downloads today's once a day). */
+    private void loadWallpaper() {
+        final ImageView wv = wallView;
+        final View veil = wallScrim;
+        if (wv == null || veil == null) {
+            return;
+        }
+        final String src = th.picture ? Wallpaper.source(th.wall) : null;
+        if (src == null) {
+            wv.setImageDrawable(null);
+            wv.setVisibility(View.GONE);
+            veil.setVisibility(View.GONE);
+            return;
+        }
+        if (net.isShutdown()) {
+            return;
+        }
+        net.execute(() -> {
+            File first = Wallpaper.latest(this, src);
+            if (first != null) {
+                showWallpaper(wv, veil, decodeWall(first));
+            }
+            File fresh = Wallpaper.ensure(this, src);
+            if (fresh != null && !fresh.equals(first)) {
+                showWallpaper(wv, veil, decodeWall(fresh));
+            }
+        });
+    }
+
+    private void showWallpaper(final ImageView wv, final View veil, final Bitmap b) {
+        if (b == null) {
+            return;
+        }
+        ui.post(() -> {
+            if (wv != wallView) {
+                return; // the screen was rebuilt meanwhile
+            }
+            wv.setImageBitmap(b);
+            wv.setVisibility(View.VISIBLE);
+            veil.setVisibility(View.VISIBLE);
+        });
+    }
+
+    private Bitmap decodeWall(File f) {
+        try {
+            BitmapFactory.Options o = new BitmapFactory.Options();
+            o.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(f.getPath(), o);
+            int sample = 1;
+            while (o.outWidth / (sample * 2) >= 1920) {
+                sample *= 2;
+            }
+            BitmapFactory.Options real = new BitmapFactory.Options();
+            real.inSampleSize = sample;
+            return BitmapFactory.decodeFile(f.getPath(), real);
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    /** Shows or hides the red dot on each app tile depending on its notifications. */
+    void updateBadges() {
+        if (io.isShutdown()) {
+            return;
+        }
+        io.execute(() -> {
+            final Set<String> pkgs = new HashSet<>();
+            if (MediaListener.connected()) {
+                for (MediaListener.Note n : MediaListener.notes(this)) {
+                    if (n.pkg != null) {
+                        pkgs.add(n.pkg);
+                    }
+                }
+            }
+            ui.post(() -> {
+                for (Map.Entry<String, View> e : tiles.entrySet()) {
+                    View dot = e.getValue().findViewWithTag("badge");
+                    if (dot != null) {
+                        dot.setVisibility(pkgs.contains(e.getKey()) ? View.VISIBLE : View.GONE);
+                    }
+                }
+            });
+        });
     }
 
     /** The quick settings panel (orbs and notifications), opened by the remote's Settings button or the gear. */
@@ -2330,7 +2561,7 @@ public class HomeActivity extends Activity {
             heroItems = new ArrayList<>();
             heroBase = false;
             refresh(true);
-        });
+        }, this::showCityDialog);
         d.setContentView(sp.build());
         openDialog = d;
         d.show();

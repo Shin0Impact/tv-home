@@ -28,6 +28,9 @@ final class Theme {
     /** Background follows the picture in focus. */
     boolean aware;
     int hlIndex;
+    /** The "wall" preference and whether a downloaded picture is the background. */
+    String wall = "none";
+    boolean picture;
     /** Three background colours (top-left, middle, bottom-right of the gradient). */
     int bgA;
     int bgB;
@@ -76,7 +79,9 @@ final class Theme {
         Theme t = new Theme();
         t.mode = mode;
         t.light = LIGHT.equals(mode);
-        t.aware = aware && (DARK.equals(mode) || LIGHT.equals(mode));
+        t.wall = p.getString("wall", "none");
+        t.picture = Wallpaper.source(t.wall) != null && !OLED.equals(mode);
+        t.aware = aware && (DARK.equals(mode) || LIGHT.equals(mode)) && !t.picture;
         t.hlIndex = hlIndex;
 
         // Highlight.
@@ -141,6 +146,15 @@ final class Theme {
             t.pill = 0xFF232B42;
             t.text = 0xFFFFFFFF;
             t.dim = 0xFF9AA3B8;
+        }
+        // A built-in wallpaper replaces the plain background of the Dark and Light themes.
+        int[] built = Wallpaper.builtin(Wallpaper.builtinIndex(t.wall), t.light);
+        if (built != null && (DARK.equals(mode) || LIGHT.equals(mode))) {
+            t.bgA = built[0];
+            t.bgB = built[1];
+            t.bgC = built[2];
+            t.blobA = built[3];
+            t.blobB = built[4];
         }
         // A highlight too close to the button colour would vanish (white on white): fall back to the text colour.
         if (Math.abs(lum(t.focusBg) - lum(t.pill)) < 40) {

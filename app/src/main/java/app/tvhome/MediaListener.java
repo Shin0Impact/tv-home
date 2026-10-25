@@ -38,6 +38,7 @@ public class MediaListener extends NotificationListenerService {
     /** One notification, reduced to what the panel shows. */
     static final class Note {
         String key;
+        String pkg;
         String label;
         CharSequence title;
         CharSequence text;
@@ -81,6 +82,7 @@ public class MediaListener extends NotificationListenerService {
                 }
                 Note note = new Note();
                 note.key = sbn.getKey();
+                note.pkg = sbn.getPackageName();
                 note.title = title;
                 note.text = text;
                 note.intent = n.contentIntent;
@@ -107,6 +109,22 @@ public class MediaListener extends NotificationListenerService {
         }
         java.util.Collections.reverse(out);
         return out;
+    }
+
+    @Override
+    public void onNotificationPosted(android.service.notification.StatusBarNotification sbn) {
+        HomeActivity home = HomeActivity.current;
+        if (home != null) {
+            home.updateBadges();
+        }
+    }
+
+    @Override
+    public void onNotificationRemoved(android.service.notification.StatusBarNotification sbn) {
+        HomeActivity home = HomeActivity.current;
+        if (home != null) {
+            home.updateBadges();
+        }
     }
 
     static int count(Context ctx) {

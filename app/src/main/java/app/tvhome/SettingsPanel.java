@@ -35,11 +35,14 @@ final class SettingsPanel {
     private final Runnable onLook;
     /** Called after a home screen option changed; null when drawn over another app. */
     private final Runnable onHome;
+    /** Opens the "type your city" box; null when drawn over another app (no keyboard box there). */
+    private final Runnable askCity;
     private final float density;
     private final FrameLayout host;
     private Theme th;
 
-    SettingsPanel(Context ctx, Runnable close, Runnable onLook, Runnable onHome) {
+    SettingsPanel(Context ctx, Runnable close, Runnable onLook, Runnable onHome, Runnable askCity) {
+        this.askCity = askCity;
         this.ctx = ctx;
         this.prefs = ctx.getSharedPreferences("home", Context.MODE_PRIVATE);
         this.close = close;
@@ -167,6 +170,62 @@ final class SettingsPanel {
             swRow.addView(sw, new LinearLayout.LayoutParams(0, dp(58), 1f));
         }
         list.addView(hlName);
+
+        // Wallpaper.
+        list.addView(sectionLabel("Wallpaper"));
+        final String wall = prefs.getString("wall", "none");
+        final boolean oled = Theme.OLED.equals(th.mode);
+        final int built = Wallpaper.builtinIndex(wall);
+        final String src = Wallpaper.source(wall);
+        TextView builtRow = pill("Built-in  \u00B7  " + (oled ? "OLED stays black" : built >= 0 ? Wallpaper.name(wall) : "Off"));
+        builtRow.setOnClickListener(v -> {
+            if (oled) {
+                return;
+            }
+            int next = built >= 0 ? built + 1 : 0;
+            prefs.edit().putString("wall", next >= Wallpaper.BUILTIN_NAMES.length ? "none" : "b" + next).apply();
+            looked();
+            fill(items.indexOf(v));
+        });
+        items.add(builtRow);
+        addRow(list, builtRow, 6);
+        TextView dailyRow = pill("Daily picture  \u00B7  " + (oled ? "OLED stays black" : src != null ? Wallpaper.name(wall) : "Off"));
+        dailyRow.setOnClickListener(v -> {
+            if (oled) {
+                return;
+            }
+            int cur = -1;
+            for (int i = 0; src != null && i < Wallpaper.SRC_IDS.length; i++) {
+                if (Wallpaper.SRC_IDS[i].equals(src)) {
+                    cur = i;
+                }
+            }
+            int next = src == null ? 0 : cur + 1;
+            prefs.edit().putString("wall", next >= Wallpaper.SRC_IDS.length ? "none" : "d:" + Wallpaper.SRC_IDS[next]).apply();
+            looked();
+            fill(items.indexOf(v));
+        });
+        items.add(dailyRow);
+        addRow(list, dailyRow, 6);
+
+        // Top bar.
+        list.addView(sectionLabel("Top bar"));
+        if (askCity != null) {
+            String city = Weather.city(prefs);
+            TextView cityRow = pill("Weather city  \u00B7  " + (city.isEmpty() ? "Not set" : city));
+            cityRow.setOnClickListener(v -> askCity.run());
+            items.add(cityRow);
+            addRow(list, cityRow, 6);
+        }
+        final boolean fahr = Weather.fahrenheit(prefs);
+        TextView unitRow = pill("Temperature  \u00B7  " + (fahr ? "\u00B0F" : "\u00B0C"));
+        unitRow.setOnClickListener(v -> {
+            prefs.edit().putString("units", fahr ? "c" : "f").apply();
+            looked();
+            fill(items.indexOf(v));
+        });
+        items.add(unitRow);
+        addRow(list, unitRow, 6);
 
         // Home screen.
         list.addView(sectionLabel("Home screen"));

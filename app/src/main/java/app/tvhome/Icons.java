@@ -19,6 +19,8 @@ final class Icons {
     static final int PERSON = 8;
     static final int CLOCK = 9;
     static final int CAST = 10;
+    static final int SEARCH = 11;
+    static final int INPUT = 12;
 
     private static final Paint P = new Paint(Paint.ANTI_ALIAS_FLAG);
     private static final RectF R = new RectF();
@@ -191,6 +193,23 @@ final class Icons {
                 }
                 P.setStyle(Paint.Style.FILL);
                 cv.drawCircle(bx, by, s * 0.03f, P);
+                break;
+            }
+            case SEARCH: {
+                P.setStyle(Paint.Style.STROKE);
+                P.setStrokeWidth(s * 0.07f);
+                cv.drawCircle(cx - s * 0.05f, cy - s * 0.05f, s * 0.2f, P);
+                cv.drawLine(cx + s * 0.1f, cy + s * 0.1f, cx + s * 0.28f, cy + s * 0.28f, P);
+                break;
+            }
+            case INPUT: {
+                P.setStyle(Paint.Style.STROKE);
+                P.setStrokeWidth(s * 0.06f);
+                R.set(ox + s * 0.3f, oy + s * 0.22f, ox + s * 0.8f, oy + s * 0.78f);
+                cv.drawRoundRect(R, s * 0.05f, s * 0.05f, P);
+                cv.drawLine(ox + s * 0.14f, cy, ox + s * 0.56f, cy, P);
+                cv.drawLine(ox + s * 0.44f, cy - s * 0.1f, ox + s * 0.56f, cy, P);
+                cv.drawLine(ox + s * 0.44f, cy + s * 0.1f, ox + s * 0.56f, cy, P);
                 break;
             }
             default:

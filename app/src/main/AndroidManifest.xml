@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Only to show the Wi-Fi icon in the top bar as connected or not. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Lets the app ask Android to uninstall an app you chose (Android always shows its own confirmation). -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <!-- Granted once over adb; lets TV Home switch on its own notification access and key service. -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <!-- Lets the hero read Android TV's Watch Next and apps' home-screen rows. Granted automatically. -->
