@@ -66,19 +66,18 @@ final class History {
             }
 
             String detail = firstNonEmpty(md.getString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE),
-                    md.getString(MediaMetadata.METADATA_KEY_ARTIST));
+                    md.getString(MediaMetadata.METADATA_KEY_ARTIST),
+                    md.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST),
+                    md.getString(MediaMetadata.METADATA_KEY_ALBUM));
             String art = firstNonEmpty(md.getString(MediaMetadata.METADATA_KEY_ART_URI),
                     md.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI),
                     md.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI));
-            String link = null;
-            if (pkg.contains("youtube")) {
-                String vid = findVideoId(md);
-                if (vid != null) {
-                    link = "https://www.youtube.com/watch?v=" + vid;
-                    if (art == null) {
-                        art = "https://i.ytimg.com/vi/" + vid + "/hqdefault.jpg";
-                    }
-                }
+            // Work out a link to the exact video from whatever the app sends, whatever app it is:
+            // a playable address, a YouTube link or id anywhere in the metadata, or a YouTube
+            // thumbnail address together with the media id.
+            String link = findLink(md, art);
+            if (art == null && link != null && link.contains("youtube.com/watch?v=")) {
+                art = "https://i.ytimg.com/vi/" + link.substring(link.indexOf("v=") + 2) + "/hqdefault.jpg";
             }
             String bmp = "none";
             if (art == null) {
@@ -150,7 +149,7 @@ final class History {
 
     /** What the app reports, shown at the bottom of the quick settings panel while we tune this. */
     private static void storeDebug(SharedPreferences prefs, String pkg, MediaMetadata md) {
-        StringBuilder sb = new StringBuilder(pkg.substring(pkg.lastIndexOf('.') + 1)).append(" reports:");
+        StringBuilder sb = new StringBuilder(pkg).append(" reports:");
         for (String key : md.keySet()) {
             String v = md.getString(key);
             String shortKey = key.substring(key.lastIndexOf('.') + 1);
@@ -158,6 +157,32 @@ final class History {
                     .append(v == null ? "(not text)" : v.length() > 40 ? v.substring(0, 40) + "..." : v);
         }
         prefs.edit().putString("mddebug_" + pkg, sb.toString()).apply();
+    }
+
+    private static final Pattern HTTP_LINK = Pattern.compile("^https?://\\S+$");
+
+    /** The best link to this exact item that the metadata gives away, or null. */
+    private static String findLink(MediaMetadata md, String art) {
+        String vid = findVideoId(md);
+        boolean ytArt = art != null && (art.contains("ytimg.com") || art.contains("youtube.com"));
+        if (vid != null && (ytArt || hasYoutubeText(md))) {
+            return "https://www.youtube.com/watch?v=" + vid;
+        }
+        String uri = md.getString(MediaMetadata.METADATA_KEY_MEDIA_URI);
+        if (uri != null && HTTP_LINK.matcher(uri).matches() && !uri.contains("googlevideo.com")) {
+            return uri;
+        }
+        return null;
+    }
+
+    private static boolean hasYoutubeText(MediaMetadata md) {
+        for (String key : md.keySet()) {
+            String v = md.getString(key);
+            if (v != null && (v.contains("youtube.com") || v.contains("youtu.be") || v.contains("ytimg.com"))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String findVideoId(MediaMetadata md) {

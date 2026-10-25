@@ -285,11 +285,42 @@ public class HomeActivity extends Activity {
         setContentView(buildRoot(pad));
     }
 
+    /**
+     * Switches on notification access and the remote-key service by itself, so a reinstall needs no
+     * adb commands. Works only after this one-time grant:
+     * adb shell pm grant app.tvhome android.permission.WRITE_SECURE_SETTINGS
+     */
+    private void ensureAccess() {
+        try {
+            if (checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS")
+                    != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                return;
+            }
+            android.content.ContentResolver cr = getContentResolver();
+            String listener = new ComponentName(this, MediaListener.class).flattenToString();
+            String keys = new ComponentName(this, KeyService.class).flattenToString();
+            String l = Settings.Secure.getString(cr, "enabled_notification_listeners");
+            if (l == null || !l.contains(listener)) {
+                Settings.Secure.putString(cr, "enabled_notification_listeners",
+                        l == null || l.isEmpty() ? listener : l + ":" + listener);
+            }
+            String a = Settings.Secure.getString(cr, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+            if (a == null || !a.contains(keys)) {
+                Settings.Secure.putString(cr, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+                        a == null || a.isEmpty() ? keys : a + ":" + keys);
+            }
+            Settings.Secure.putInt(cr, Settings.Secure.ACCESSIBILITY_ENABLED, 1);
+        } catch (Exception ignored) {
+            // no permission or a locked-down TV: the adb commands still work
+        }
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
         onScreen = true;
         visible = this;
+        ensureAccess();
         if (openSettingsOnResume) {
             openSettingsOnResume = false;
             ui.post(() -> showHomeSettings(0));
@@ -1524,7 +1555,8 @@ public class HomeActivity extends Activity {
     /** True when pressing OK on this remembered title can lead somewhere specific, not just the app. */
     private boolean canOpen(JSONObject o) {
         String pkg = o.optString("pkg");
-        return !o.optString("link").isEmpty() || pkg.contains("youtube") || supportsPlaySearch(pkg);
+        return !o.optString("link").isEmpty() || pkg.contains("youtube") || supportsPlaySearch(pkg)
+                || !o.optString("art").isEmpty(); // has a poster: show it, OK at least opens the app
     }
 
     /**
@@ -1534,8 +1566,12 @@ public class HomeActivity extends Activity {
     private Intent intentFor(JSONObject o, App a) {
         String link = o.optString("link");
         if (!link.isEmpty()) {
-            return new Intent(Intent.ACTION_VIEW, Uri.parse(link))
+            Intent view = new Intent(Intent.ACTION_VIEW, Uri.parse(link))
                     .setPackage(a.pkg).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            // Only if the app really handles that kind of link; otherwise try the other ways.
+            if (getPackageManager().resolveActivity(view, 0) != null) {
+                return view;
+            }
         }
         String title = o.optString("title");
         if (supportsPlaySearch(a.pkg)) {
