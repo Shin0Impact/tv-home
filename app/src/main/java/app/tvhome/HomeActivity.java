@@ -2300,11 +2300,18 @@ public class HomeActivity extends Activity {
         } else {
             setContentView(fresh);
         }
-        refresh(true);
+        if (shownApps.isEmpty()) {
+            refresh(true);
+        } else {
+            // Rebuild from what is already in memory (no package scan, no image loading), all at
+            // once, so nothing heavy happens while the fade is running.
+            render(new ArrayList<>(shownApps));
+        }
         if (oldRoot != null) {
             // Fade it as one flat layer on the graphics chip, so the fade stays smooth on this weak TV.
+            // The fade starts after the new screen has been drawn once.
             oldRoot.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-            oldRoot.animate().alpha(0f).setDuration(300)
+            oldRoot.animate().setStartDelay(60).alpha(0f).setDuration(300)
                     .setInterpolator(new android.view.animation.LinearInterpolator())
                     .withEndAction(() -> {
                         oldRoot.setLayerType(View.LAYER_TYPE_NONE, null);
