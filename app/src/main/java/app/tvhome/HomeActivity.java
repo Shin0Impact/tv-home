@@ -2237,7 +2237,8 @@ public class HomeActivity extends Activity {
                 conn.setReadTimeout(8000);
                 in = conn.getInputStream();
             } else if ("file".equals(scheme) && uri.getPath() != null
-                    && uri.getPath().startsWith(getCacheDir().getAbsolutePath())) {
+                    && (uri.getPath().startsWith(getFilesDir().getAbsolutePath())
+                    || uri.getPath().startsWith(getCacheDir().getAbsolutePath()))) {
                 in = new FileInputStream(uri.getPath()); // only our own artwork cache
             } else if ("content".equals(scheme) || "android.resource".equals(scheme)) {
                 in = getContentResolver().openInputStream(uri);

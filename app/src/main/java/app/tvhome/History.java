@@ -229,11 +229,11 @@ final class History {
             }
             if (blank) {
                 // Keep whatever good picture was saved earlier for this title.
-                File old = new File(new File(ctx.getCacheDir(), "art"),
+                File old = new File(new File(ctx.getFilesDir(), "art"),
                         Integer.toHexString((pkg + "|" + title).hashCode()) + ".jpg");
                 return old.exists() ? Uri.fromFile(old).toString() : null;
             }
-            File dir = new File(ctx.getCacheDir(), "art");
+            File dir = new File(ctx.getFilesDir(), "art");
             if (!dir.exists() && !dir.mkdirs()) {
                 return null;
             }
