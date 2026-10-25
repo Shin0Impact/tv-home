@@ -63,15 +63,13 @@ public class KeyService extends AccessibilityService {
                 || key == KeyEvent.KEYCODE_VOLUME_MUTE) && overlay != null) {
             // The TV draws its volume bar below our window: step aside for a few seconds so it shows.
             if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                final View v = overlay;
                 android.util.Log.i("TVHomeKey", "volume key: hiding menu");
-                v.setAlpha(0f);
-                v.setVisibility(View.INVISIBLE);
-                v.removeCallbacks(showAgain);
-                showAgainView = v;
-                v.postDelayed(showAgain, 3000);
+                hideForVolume();
             }
             return false;
+        }
+        if (overlay != null && event.getAction() == KeyEvent.ACTION_DOWN) {
+            android.util.Log.i("TVHomeKey", "key while menu open: " + key);
         }
         boolean panel = key == KeyEvent.KEYCODE_NOTIFICATION || key == KeyEvent.KEYCODE_SETTINGS;
         boolean profile = key == KeyEvent.KEYCODE_PROFILE_SWITCH;
@@ -92,6 +90,29 @@ public class KeyService extends AccessibilityService {
         }
         return true;
     }
+
+    /** Hides the menu for three seconds so the TV's volume bar can be seen. */
+    private void hideForVolume() {
+        final View v = overlay;
+        if (v == null) {
+            return;
+        }
+        v.setAlpha(0f);
+        v.setVisibility(View.INVISIBLE);
+        v.removeCallbacks(showAgain);
+        showAgainView = v;
+        v.postDelayed(showAgain, 3000);
+    }
+
+    /** Fires whenever the volume changes, even when the remote's volume keys never reach this app. */
+    private final android.content.BroadcastReceiver volumeReceiver = new android.content.BroadcastReceiver() {
+        @Override
+        public void onReceive(android.content.Context c, Intent i) {
+            android.util.Log.i("TVHomeKey", "volume changed broadcast: hiding menu");
+            hideForVolume();
+        }
+    };
+    private boolean volumeWatching;
 
     private View overlay;
     private View showAgainView;
@@ -191,6 +212,15 @@ public class KeyService extends AccessibilityService {
                     + " canDrawOverlays=" + android.provider.Settings.canDrawOverlays(this));
             overlay = holder;
             holder.requestFocus();
+            if (!volumeWatching) {
+                try {
+                    registerReceiver(volumeReceiver,
+                            new android.content.IntentFilter("android.media.VOLUME_CHANGED_ACTION"));
+                    volumeWatching = true;
+                } catch (Exception e) {
+                    android.util.Log.w("TVHomeKey", "volume watch failed: " + e);
+                }
+            }
         } catch (Exception e) {
             overlay = null;
             try {
@@ -206,6 +236,14 @@ public class KeyService extends AccessibilityService {
         View v = overlay;
         overlay = null;
         settings = null;
+        if (volumeWatching) {
+            try {
+                unregisterReceiver(volumeReceiver);
+            } catch (Exception ignored) {
+                // not registered
+            }
+            volumeWatching = false;
+        }
         if (v == null) {
             return;
         }
