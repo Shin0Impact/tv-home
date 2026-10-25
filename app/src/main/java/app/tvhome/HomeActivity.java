@@ -1022,14 +1022,18 @@ public class HomeActivity extends Activity {
     }
 
     private View buildHero() {
-        heroRoot = new FrameLayout(this);
+        // Fading the whole hero would otherwise draw all five cards into a separate big picture
+        // first, on every frame of the slide-in. The cards never overlap, so this is safe.
+        heroRoot = new FrameLayout(this) {
+            @Override
+            public boolean hasOverlappingRendering() {
+                return false;
+            }
+        };
         heroRoot.setFocusable(true);
         heroRoot.setClickable(true);
         heroRoot.setClipChildren(false);
         heroRoot.setClipToPadding(false);
-        // Fading the whole hero would otherwise draw all five cards into a separate big picture
-        // first, on every frame of the slide-in. The cards never overlap, so this is safe.
-        heroRoot.setHasOverlappingRendering(false);
 
         slots = new Slot[5];
         for (int i = 0; i < slots.length; i++) {
