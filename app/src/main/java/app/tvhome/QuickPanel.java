@@ -428,16 +428,6 @@ final class QuickPanel {
         if ("Wi-Fi".equals(name)) {
             return isOnline() ? "Connected" : "Not connected";
         }
-        if ("Sound".equals(name)) {
-            try {
-                android.media.AudioManager am = (android.media.AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
-                int max = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC);
-                int cur = am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC);
-                return max > 0 ? (cur * 100 / max) + "%" : "";
-            } catch (Exception e) {
-                return "";
-            }
-        }
         if ("Screen saver".equals(name)) {
             return "Start now";
         }
