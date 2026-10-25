@@ -2283,6 +2283,7 @@ public class HomeActivity extends Activity {
     // --------------------------------------------------------------- actions
 
     private void launch(App a) {
+        SearchDialog.recordUse(prefs, a.pkg);
         safeStart(a.launch);
     }
 
@@ -2620,7 +2621,7 @@ public class HomeActivity extends Activity {
     private void showHomeSettings(final int focusRow) {
         dismissDialog();
         final Dialog d = new Dialog(this, android.R.style.Theme_Material_NoActionBar);
-        SettingsPanel sp = new SettingsPanel(this, d::dismiss, this::applyTheme, () -> {
+        final SettingsPanel sp = new SettingsPanel(this, d::dismiss, this::applyTheme, () -> {
             stageApp = null;
             focusedApp = null;
             heroItems = new ArrayList<>();
@@ -2628,15 +2629,15 @@ public class HomeActivity extends Activity {
             refresh(true);
         }, this::showCityDialog);
         d.setContentView(sp.build());
+        d.setOnKeyListener((dialog, keyCode, ev) -> keyCode == android.view.KeyEvent.KEYCODE_BACK
+                && ev.getAction() == android.view.KeyEvent.ACTION_UP && sp.back());
         openDialog = d;
         d.show();
         Window window = d.getWindow();
         if (window != null) {
             window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            window.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-            window.setLayout(dp(400), ViewGroup.LayoutParams.MATCH_PARENT);
-            window.setDimAmount(0.55f);
-            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
         }
     }
 

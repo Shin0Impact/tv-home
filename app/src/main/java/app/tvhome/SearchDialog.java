@@ -3,6 +3,7 @@ package app.tvhome;
 import android.app.Activity;
 import android.app.Dialog;
 import android.app.SearchManager;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.Intent;
@@ -24,6 +25,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +60,7 @@ final class SearchDialog {
         // Every app on the home screen that can take a search (a standard search, Google's app
         // search action, or "play from search") gets its own row, so this list builds itself.
         final Map<String, String> searchable = searchableApps(act, pkgs);
+        final SharedPreferences usePrefs = act.getSharedPreferences("home", Activity.MODE_PRIVATE);
 
         // The field.
         final EditText input = new EditText(act);
@@ -94,7 +97,9 @@ final class SearchDialog {
             }
             String low = q.toLowerCase();
             int shown = 0;
-            for (int i = 0; i < labels.size() && shown < 4; i++) {
+            final List<Integer> order = byUse(usePrefs, pkgs);
+            for (int oi = 0; oi < order.size() && shown < 4; oi++) {
+                int i = order.get(oi);
                 if (labels.get(i).toLowerCase().contains(low)) {
                     final String pkg = pkgs.get(i);
                     results.addView(row(act, th, density, "Open  " + labels.get(i), () -> {
@@ -106,7 +111,8 @@ final class SearchDialog {
             }
             final String query = q;
             int apps = 0;
-            for (int i = 0; i < labels.size() && apps < 8; i++) {
+            for (int oi = 0; oi < order.size() && apps < 8; oi++) {
+                int i = order.get(oi);
                 final String pkg = pkgs.get(i);
                 final String action = searchable.get(pkg);
                 if (action == null) {
@@ -218,12 +224,56 @@ final class SearchDialog {
         return found;
     }
 
+    /** Remembers that an app was opened (how often, and when last). */
+    static void recordUse(SharedPreferences p, String pkg) {
+        p.edit().putInt("uses_" + pkg, p.getInt("uses_" + pkg, 0) + 1)
+                .putLong("last_" + pkg, System.currentTimeMillis()).apply();
+    }
+
+    /** Indexes into pkgs: the last used app, then the 3 most used, then the rest; nobody twice. */
+    private static List<Integer> byUse(SharedPreferences p, List<String> pkgs) {
+        List<Integer> out = new ArrayList<>();
+        int last = -1;
+        long best = 0;
+        for (int i = 0; i < pkgs.size(); i++) {
+            long t = p.getLong("last_" + pkgs.get(i), 0);
+            if (t > best) {
+                best = t;
+                last = i;
+            }
+        }
+        if (last >= 0) {
+            out.add(last);
+        }
+        for (int n = 0; n < 3; n++) {
+            int top = -1;
+            int most = 0;
+            for (int i = 0; i < pkgs.size(); i++) {
+                int u = p.getInt("uses_" + pkgs.get(i), 0);
+                if (u > most && !out.contains(i)) {
+                    most = u;
+                    top = i;
+                }
+            }
+            if (top >= 0) {
+                out.add(top);
+            }
+        }
+        for (int i = 0; i < pkgs.size(); i++) {
+            if (!out.contains(i)) {
+                out.add(i);
+            }
+        }
+        return out;
+    }
+
     private static void searchIn(Activity act, String pkg, String action, String query) {
         Intent i = new Intent(action).setPackage(pkg).putExtra(SearchManager.QUERY, query)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         if (action.endsWith("MEDIA_PLAY_FROM_SEARCH")) {
             i.putExtra("android.intent.extra.focus", "vnd.android.cursor.item/*");
         }
+        recordUse(act.getSharedPreferences("home", Activity.MODE_PRIVATE), pkg);
         try {
             act.startActivity(i);
         } catch (Exception e) {

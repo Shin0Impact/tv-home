@@ -55,27 +55,28 @@ final class QuickPanel {
 
         LinearLayout panel = new LinearLayout(ctx);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(20), dp(20), dp(20), dp(14));
+        panel.setPadding(dp(22), dp(22), dp(22), dp(16));
         // A floating rounded card with a hairline edge, not a slab glued to the screen edge.
         GradientDrawable bg = new GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM, Theme.grad(th.sheet));
-        bg.setCornerRadii(new float[]{dp(20), dp(20), 0, 0, 0, 0, dp(20), dp(20)});
+        bg.setCornerRadius(dp(34));
         panel.setBackground(bg);
 
         android.widget.TextClock clock = new android.widget.TextClock(ctx);
         clock.setFormat12Hour("h:mm");
         clock.setFormat24Hour("HH:mm");
         clock.setTextColor(th.text);
-        clock.setTextSize(TypedValue.COMPLEX_UNIT_SP, 30);
+        clock.setTextSize(TypedValue.COMPLEX_UNIT_SP, 44);
         clock.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
+        clock.setIncludeFontPadding(false);
         clock.setPadding(dp(4), 0, 0, 0);
         panel.addView(clock);
         android.widget.TextClock date = new android.widget.TextClock(ctx);
         date.setFormat12Hour("EEEE, d MMMM");
         date.setFormat24Hour("EEEE, d MMMM");
         date.setTextColor(th.dim);
-        date.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        date.setPadding(dp(4), 0, 0, dp(12));
+        date.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        date.setPadding(dp(4), dp(2), 0, dp(16));
         panel.addView(date);
 
         ScrollView sv = new ScrollView(ctx);
@@ -101,7 +102,7 @@ final class QuickPanel {
                 {"Accounts", "", Icons.PERSON, Settings.ACTION_SYNC_SETTINGS, false},
                 {"All settings", "", Icons.GEAR, Settings.ACTION_SETTINGS, false},
                 {"TV Home", "", Icons.SLIDERS, "app.tvhome.OPEN_SETTINGS", false}};
-        final int perRow = 5;
+        final int perRow = 2;
         LinearLayout row = null;
         for (int i = 0; i < orbs.length; i++) {
             if (i % perRow == 0) {
@@ -110,14 +111,17 @@ final class QuickPanel {
                 row.setClipChildren(false);
                 LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                rlp.bottomMargin = dp(6);
+                rlp.bottomMargin = dp(10);
                 content.addView(row, rlp);
             }
             Object[] o = orbs[i];
-            View cell = orb((String) o[0], (String) o[1], (Integer) o[2], (Boolean) o[4]);
+            View cell = tile((String) o[0], statusFor((String) o[0]), (Integer) o[2], (Boolean) o[4]);
             final String action = (String) o[3];
             cell.setOnClickListener(v -> openAction(action));
-            row.addView(cell, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0, dp(66), 1f);
+            clp.leftMargin = dp(i % perRow == 0 ? 0 : 5);
+            clp.rightMargin = dp(i % perRow == 0 ? 5 : 0);
+            row.addView(cell, clp);
         }
 
         // The TV's inputs; opened by the Source button.
@@ -186,7 +190,7 @@ final class QuickPanel {
         panel.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         android.widget.FrameLayout frame = new android.widget.FrameLayout(ctx);
-        frame.setPadding(0, 0, 0, 0);
+        frame.setPadding(dp(14), dp(14), dp(14), dp(14));
         frame.setClipChildren(false);
         frame.addView(panel, new android.widget.FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -308,7 +312,7 @@ final class QuickPanel {
         card.setClickable(true);
         final GradientDrawable bg = new GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM, Theme.grad(th.pill));
-        bg.setCornerRadius(dp(12));
+        bg.setCornerRadius(dp(20));
         card.setBackground(bg);
 
         // The app's own small icon, on a round coloured chip so a white icon is always visible.
@@ -381,16 +385,39 @@ final class QuickPanel {
         return card;
     }
 
-    /** One round button with a label under it. */
-    private View orb(String label, String status, final int icon, final boolean on) {
+    private String statusFor(String name) {
+        if ("Wi-Fi".equals(name)) {
+            return isOnline() ? "Connected" : "Not connected";
+        }
+        if ("Sound".equals(name)) {
+            try {
+                android.media.AudioManager am = (android.media.AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
+                int max = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC);
+                int cur = am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC);
+                return max > 0 ? (cur * 100 / max) + "%" : "";
+            } catch (Exception e) {
+                return "";
+            }
+        }
+        if ("Screen saver".equals(name)) {
+            return "Start now";
+        }
+        return "";
+    }
+
+    /** A wide rounded tile: a round icon on the left, the name and a small status next to it. */
+    private View tile(String label, String status, final int icon, final boolean on) {
         final LinearLayout cell = new LinearLayout(ctx);
-        cell.setOrientation(LinearLayout.VERTICAL);
-        cell.setGravity(Gravity.CENTER_HORIZONTAL);
+        cell.setOrientation(LinearLayout.HORIZONTAL);
+        cell.setGravity(Gravity.CENTER_VERTICAL);
         cell.setFocusable(true);
         cell.setClickable(true);
-        cell.setPadding(0, dp(6), 0, dp(6));
-        cell.setClipChildren(false);
-        cell.setClipToPadding(false);
+        cell.setPadding(dp(14), 0, dp(10), 0);
+        final GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(dp(22));
+        final int base = th.light ? 0x14000000 : 0x24FFFFFF;
+        bg.setColor(base);
+        cell.setBackground(bg);
 
         final View disc = new View(ctx) {
             @Override
@@ -400,44 +427,44 @@ final class QuickPanel {
                 boolean f = cell.isFocused();
                 Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
                 p.setStyle(Paint.Style.FILL);
-                int fill = on ? th.accent : th.pill;
+                int fill = f ? ((th.focusText & 0x00FFFFFF) | 0x26000000)
+                        : on ? th.accent : (th.light ? 0x1F000000 : 0x38FFFFFF);
                 p.setColor(fill);
-                float r = Math.min(w, h) / 2 - dp(4);
+                float r = Math.min(w, h) / 2;
                 cv.drawCircle(w / 2, h / 2, r, p);
-                if (f) {
-                    p.setStyle(Paint.Style.STROKE);
-                    p.setStrokeWidth(dp(3));
-                    p.setColor(th.ring);
-                    cv.drawCircle(w / 2, h / 2, r + dp(2), p);
-                }
-                int ink = Theme.onColor(fill);
-                Icons.draw(cv, icon, w / 2, h / 2, r * 2f * 0.9f, ink, fill);
+                int ink = f ? th.focusText : on ? Theme.onColor(th.accent) : th.text;
+                Icons.draw(cv, icon, w / 2, h / 2, r * 2f * 0.85f, ink, fill);
             }
         };
-        cell.addView(disc, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(40), dp(40));
+        dlp.rightMargin = dp(12);
+        cell.addView(disc, dlp);
 
+        LinearLayout col = new LinearLayout(ctx);
+        col.setOrientation(LinearLayout.VERTICAL);
         final TextView name = new TextView(ctx);
         name.setText(label);
         name.setTextColor(th.text);
-        name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
-        name.setGravity(Gravity.CENTER);
+        name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        name.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.END);
-        name.setPadding(0, dp(4), 0, 0);
-        cell.addView(name);
-
-        // Always present (blank when there is no status) so every label lines up.
-        TextView st = new TextView(ctx);
-        st.setText(status.isEmpty() ? " " : status);
+        col.addView(name);
+        final TextView st = new TextView(ctx);
+        st.setText(status);
         st.setTextColor(th.dim);
-        st.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
-        st.setGravity(Gravity.CENTER);
+        st.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         st.setSingleLine(true);
-        cell.addView(st);
+        st.setVisibility(status.isEmpty() ? View.GONE : View.VISIBLE);
+        col.addView(st);
+        cell.addView(col, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         cell.setOnFocusChangeListener((v, focused) -> {
+            bg.setColor(focused ? th.focusBg : base);
+            name.setTextColor(focused ? th.focusText : th.text);
+            st.setTextColor(focused ? th.focusText : th.dim);
             disc.invalidate();
-
+            v.animate().scaleX(focused ? 1.03f : 1f).scaleY(focused ? 1.03f : 1f).setDuration(110).start();
         });
         return cell;
     }

@@ -13,7 +13,10 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.ScrollView;
+import android.view.KeyEvent;
+import android.view.Gravity;
 import android.widget.TextView;
 
 import java.util.ArrayList;
@@ -38,7 +41,10 @@ final class SettingsPanel {
     /** Opens the "type your city" box; null when drawn over another app (no keyboard box there). */
     private final Runnable askCity;
     private final float density;
-    private final FrameLayout host;
+    private final Root host;
+    /** -1 = the list of settings; otherwise the index of the setting shown in the bottom bar. */
+    private int bar = -1;
+    private int listFocus = 0;
     private Theme th;
 
     SettingsPanel(Context ctx, Runnable close, Runnable onLook, Runnable onHome, Runnable askCity) {
@@ -49,12 +55,21 @@ final class SettingsPanel {
         this.onLook = onLook;
         this.onHome = onHome;
         this.density = ctx.getResources().getDisplayMetrics().density;
-        this.host = new FrameLayout(ctx);
+        this.host = new Root(ctx);
     }
 
     View build() {
-        fill(0);
+        showList(0);
         return host;
+    }
+
+    /** Back: from the bottom bar to the list. Returns false when the list itself should close. */
+    boolean back() {
+        if (bar >= 0) {
+            showList(bar);
+            return true;
+        }
+        return false;
     }
 
     View firstFocus() {
@@ -82,219 +97,411 @@ final class SettingsPanel {
         return (int) (v * density + 0.5f);
     }
 
-    private void fill(int focusIndex) {
+    private static final String[] TITLES = {"Theme", "Content aware", "Highlight", "Wallpaper", "Top bar", "Home screen"};
+
+    /** Full-screen host: draws the dim itself and turns Up/Down in the bottom bar into "other setting". */
+    private class Root extends FrameLayout {
+        Root(Context c) {
+            super(c);
+        }
+
+        @Override
+        public boolean dispatchKeyEvent(KeyEvent e) {
+            if (bar >= 0) {
+                int k = e.getKeyCode();
+                if (k == KeyEvent.KEYCODE_DPAD_UP || k == KeyEvent.KEYCODE_DPAD_DOWN) {
+                    if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
+                        int next = bar + (k == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : -1);
+                        if (next >= 0 && next < TITLES.length) {
+                            showBar(next, -1);
+                        }
+                    }
+                    return true;
+                }
+            }
+            return super.dispatchKeyEvent(e);
+        }
+    }
+
+    private String value(int i) {
+        switch (i) {
+            case 0:
+                return Theme.modeName(th.mode);
+            case 1:
+                return th.aware ? "On" : "Off";
+            case 2:
+                return Theme.HL_NAMES[th.hlIndex];
+            case 3: {
+                String wall = prefs.getString("wall", "none");
+                if (Theme.OLED.equals(th.mode) || "none".equals(wall)) {
+                    return "Off";
+                }
+                return Wallpaper.name(wall);
+            }
+            case 4: {
+                String city = Weather.city(prefs);
+                return city.isEmpty() ? (Weather.fahrenheit(prefs) ? "\u00B0F" : "\u00B0C")
+                        : city + " \u00B7 " + (Weather.fahrenheit(prefs) ? "\u00B0F" : "\u00B0C");
+            }
+            default:
+                return "";
+        }
+    }
+
+    // ------------------------------------------------------------ the list (side panel)
+
+    private void showList(int focusIndex) {
+        bar = -1;
         th = Theme.load(prefs);
         host.removeAllViews();
+        host.setBackgroundColor(0x88000000);
 
         LinearLayout panel = new LinearLayout(ctx);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(24), dp(24), dp(24), dp(16));
+        panel.setPadding(dp(24), dp(28), dp(24), dp(20));
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(th.sheet);
-        bg.setCornerRadii(new float[]{dp(20), dp(20), 0, 0, 0, 0, dp(20), dp(20)});
+        bg.setCornerRadii(new float[]{dp(28), dp(28), 0, 0, 0, 0, dp(28), dp(28)});
         panel.setBackground(bg);
 
         TextView title = new TextView(ctx);
         title.setText("TV Home");
         title.setTextColor(th.text);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        title.setPadding(dp(4), 0, 0, dp(4));
+        title.setPadding(dp(6), 0, 0, dp(18));
         panel.addView(title);
 
-        ScrollView sv = new ScrollView(ctx);
-        sv.setVerticalScrollBarEnabled(false);
-        final LinearLayout list = new LinearLayout(ctx);
-        list.setOrientation(LinearLayout.VERTICAL);
-        sv.addView(list);
-        final List<View> items = new ArrayList<>();
-
-        // Theme.
-        list.addView(sectionLabel("Theme"));
-        for (int i = 0; i < Theme.MODES.length; i++) {
-            final String mode = Theme.MODES[i];
-            boolean on = mode.equals(th.mode);
-            TextView row = pill(Theme.MODE_NAMES[i] + (on ? "   ✓" : ""));
-            row.setOnClickListener(v -> {
-                prefs.edit().putString("theme", mode).apply();
-                looked();
-                fill(items.indexOf(v));
-            });
-            items.add(row);
-            addRow(list, row, 6);
-        }
-        final boolean awareAllowed = Theme.DARK.equals(th.mode) || Theme.LIGHT.equals(th.mode);
-        final boolean awareOn = prefs.getBoolean("aware", false);
-        TextView aware = pill("Content aware  ·  " + (awareAllowed
-                ? (th.aware ? "On" : "Off") : "Dark and Light only"));
-        aware.setOnClickListener(v -> {
-            if (awareAllowed) {
-                prefs.edit().putBoolean("aware", !awareOn).apply();
-                looked();
-                fill(items.indexOf(v));
-            }
-        });
-        items.add(aware);
-        addRow(list, aware, 6);
-
-        // Highlight colour.
-        list.addView(sectionLabel("Highlight"));
-        final TextView hlName = new TextView(ctx);
-        hlName.setText(Theme.HL_NAMES[th.hlIndex]);
-        hlName.setTextColor(th.dim);
-        hlName.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        hlName.setPadding(dp(4), dp(4), 0, 0);
-        final int perRow = 5;
-        LinearLayout swRow = null;
-        for (int i = 0; i < Theme.HL_COLORS.length; i++) {
-            if (i % perRow == 0) {
-                swRow = new LinearLayout(ctx);
-                swRow.setOrientation(LinearLayout.HORIZONTAL);
-                list.addView(swRow, new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            }
+        final List<View> rows = new ArrayList<>();
+        for (int i = 0; i < TITLES.length; i++) {
             final int index = i;
-            Swatch sw = new Swatch(ctx, i, i == th.hlIndex);
-            sw.setOnClickListener(v -> {
-                prefs.edit().putInt("hl", index).apply();
-                looked();
-                fill(items.indexOf(v));
+            View row = listRow(TITLES[i], value(i));
+            row.setOnClickListener(v -> {
+                listFocus = index;
+                showBar(index, -1);
             });
-            sw.setOnFocusChangeListener((v, f) -> {
-                v.invalidate();
-                if (f) {
-                    hlName.setText(Theme.HL_NAMES[index]);
-                }
-            });
-            items.add(sw);
-            swRow.addView(sw, new LinearLayout.LayoutParams(0, dp(58), 1f));
+            rows.add(row);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(58));
+            lp.bottomMargin = dp(8);
+            panel.addView(row, lp);
         }
-        list.addView(hlName);
-
-        // Wallpaper.
-        list.addView(sectionLabel("Wallpaper"));
-        final String wall = prefs.getString("wall", "none");
-        final boolean oled = Theme.OLED.equals(th.mode);
-        final int built = Wallpaper.builtinIndex(wall);
-        final String src = Wallpaper.source(wall);
-        TextView builtRow = pill("Built-in  \u00B7  " + (oled ? "OLED stays black" : built >= 0 ? Wallpaper.name(wall) : "Off"));
-        builtRow.setOnClickListener(v -> {
-            if (oled) {
-                return;
-            }
-            int next = built >= 0 ? built + 1 : 0;
-            prefs.edit().putString("wall", next >= Wallpaper.BUILTIN_NAMES.length ? "none" : "b" + next).apply();
-            looked();
-            fill(items.indexOf(v));
-        });
-        items.add(builtRow);
-        addRow(list, builtRow, 6);
-        TextView dailyRow = pill("Daily picture  \u00B7  " + (oled ? "OLED stays black" : src != null ? Wallpaper.name(wall) : "Off"));
-        dailyRow.setOnClickListener(v -> {
-            if (oled) {
-                return;
-            }
-            int cur = -1;
-            for (int i = 0; src != null && i < Wallpaper.SRC_IDS.length; i++) {
-                if (Wallpaper.SRC_IDS[i].equals(src)) {
-                    cur = i;
-                }
-            }
-            int next = src == null ? 0 : cur + 1;
-            prefs.edit().putString("wall", next >= Wallpaper.SRC_IDS.length ? "none" : "d:" + Wallpaper.SRC_IDS[next]).apply();
-            looked();
-            fill(items.indexOf(v));
-        });
-        items.add(dailyRow);
-        addRow(list, dailyRow, 6);
-
-        // Top bar.
-        list.addView(sectionLabel("Top bar"));
-        if (askCity != null) {
-            String city = Weather.city(prefs);
-            TextView cityRow = pill("Weather city  \u00B7  " + (city.isEmpty() ? "Not set" : city));
-            cityRow.setOnClickListener(v -> askCity.run());
-            items.add(cityRow);
-            addRow(list, cityRow, 6);
-        }
-        final boolean fahr = Weather.fahrenheit(prefs);
-        TextView unitRow = pill("Temperature  \u00B7  " + (fahr ? "\u00B0F" : "\u00B0C"));
-        unitRow.setOnClickListener(v -> {
-            prefs.edit().putString("units", fahr ? "c" : "f").apply();
-            looked();
-            fill(items.indexOf(v));
-        });
-        items.add(unitRow);
-        addRow(list, unitRow, 6);
-
-        // Home screen.
-        list.addView(sectionLabel("Home screen"));
-        Set<String> hidden = prefs.getStringSet("hidden", new HashSet<String>());
-        if (!hidden.isEmpty()) {
-            TextView hiddenRow = pill("Show " + hidden.size() + " hidden apps");
-            hiddenRow.setOnClickListener(v -> {
-                prefs.edit().remove("hidden").apply();
-                homeChanged();
-            });
-            items.add(hiddenRow);
-            addRow(list, hiddenRow, 6);
-        }
-        final boolean storeOn = prefs.getBoolean("store", true);
-        TextView storeRow = pill("Play Store top apps  ·  " + (storeOn ? "On" : "Off"));
-        storeRow.setOnClickListener(v -> {
-            prefs.edit().putBoolean("store", !storeOn).apply();
-            homeChanged();
-        });
-        items.add(storeRow);
-        addRow(list, storeRow, 6);
-
-        final boolean demoOn = prefs.getBoolean("demo", false);
-        TextView demoRow = pill("Demo cards  ·  " + (demoOn ? "On" : "Off"));
-        demoRow.setOnClickListener(v -> {
-            prefs.edit().putBoolean("demo", !demoOn).apply();
-            homeChanged();
-        });
-        items.add(demoRow);
-        addRow(list, demoRow, 6);
-
-        TextView orderRow = pill("Reset app order");
-        orderRow.setOnClickListener(v -> {
-            prefs.edit().remove("order").apply();
-            homeChanged();
-        });
-        items.add(orderRow);
-        addRow(list, orderRow, 6);
-
+        View space = new View(ctx);
+        panel.addView(space, new LinearLayout.LayoutParams(1, 0, 1f));
         TextView done = pill("Done");
+        done.setGravity(Gravity.CENTER);
         done.setOnClickListener(v -> close.run());
-        items.add(done);
-        addRow(list, done, 14);
+        panel.addView(done, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        panel.addView(sv, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        host.addView(panel, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        final View target = items.get(Math.max(0, Math.min(focusIndex, items.size() - 1)));
+        host.addView(panel, new FrameLayout.LayoutParams(dp(400), ViewGroup.LayoutParams.MATCH_PARENT,
+                Gravity.END));
+        final View target = rows.get(Math.max(0, Math.min(focusIndex, rows.size() - 1)));
         target.post(target::requestFocus);
     }
 
-    private void addRow(LinearLayout list, TextView row, int gapDp) {
-        row.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.bottomMargin = dp(gapDp);
-        list.addView(row, lp);
+    private View listRow(String name, String value) {
+        final LinearLayout row = new LinearLayout(ctx);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(20), 0, dp(20), 0);
+        row.setFocusable(true);
+        row.setClickable(true);
+        final GradientDrawable bg = new GradientDrawable();
+        bg.setColor(th.pill);
+        bg.setCornerRadius(dp(18));
+        row.setBackground(bg);
+        final TextView n = new TextView(ctx);
+        n.setText(name);
+        n.setTextColor(th.text);
+        n.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
+        row.addView(n, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        final TextView v = new TextView(ctx);
+        v.setText(value.isEmpty() ? "\u203A" : value + "  \u203A");
+        v.setTextColor(th.dim);
+        v.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        v.setSingleLine(true);
+        row.addView(v);
+        row.setOnFocusChangeListener((x, focused) -> {
+            bg.setColor(focused ? th.focusBg : th.pill);
+            n.setTextColor(focused ? th.focusText : th.text);
+            v.setTextColor(focused ? th.focusText : th.dim);
+        });
+        return row;
     }
 
-    private TextView sectionLabel(String text) {
+    // ------------------------------------------------------------ the bottom bar
+
+    /** Opens setting {@code index} as a bar along the bottom; focusPos picks the choice to focus (-1 = the current one). */
+    private void showBar(final int index, final int focusPos) {
+        bar = index;
+        th = Theme.load(prefs);
+        host.removeAllViews();
+        host.setBackgroundColor(0x33000000); // light dim, so a theme change stays visible behind the bar
+
+        LinearLayout panel = new LinearLayout(ctx);
+        panel.setOrientation(LinearLayout.HORIZONTAL);
+        panel.setGravity(Gravity.CENTER_VERTICAL);
+        panel.setPadding(dp(40), dp(18), dp(40), dp(26));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(th.sheet);
+        bg.setCornerRadii(new float[]{dp(32), dp(32), dp(32), dp(32), 0, 0, 0, 0});
+        panel.setBackground(bg);
+
+        // Left: this setting's name, with the one above and below it, so Up / Down is obvious.
+        LinearLayout nav = new LinearLayout(ctx);
+        nav.setOrientation(LinearLayout.VERTICAL);
+        nav.addView(navText(index > 0 ? TITLES[index - 1] : " ", false));
+        nav.addView(navText(TITLES[index], true));
+        nav.addView(navText(index < TITLES.length - 1 ? TITLES[index + 1] : " ", false));
+        panel.addView(nav, new LinearLayout.LayoutParams(dp(210), ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        final LinearLayout choices = new LinearLayout(ctx);
+        choices.setOrientation(LinearLayout.HORIZONTAL);
+        choices.setGravity(Gravity.CENTER_VERTICAL);
+        choices.setPadding(dp(8), dp(12), dp(8), dp(12));
+        choices.setClipChildren(false);
+        choices.setClipToPadding(false);
+        HorizontalScrollView hs = new HorizontalScrollView(ctx);
+        hs.setHorizontalScrollBarEnabled(false);
+        hs.setClipChildren(false);
+        hs.setClipToPadding(false);
+        hs.addView(choices);
+        panel.addView(hs, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        final List<View> items = new ArrayList<>();
+        int selected = buildChoices(index, choices, items);
+
+        host.addView(panel, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM));
+        int want = focusPos >= 0 ? focusPos : selected;
+        final View target = items.isEmpty() ? panel
+                : items.get(Math.max(0, Math.min(want, items.size() - 1)));
+        target.post(target::requestFocus);
+    }
+
+    private TextView navText(String text, boolean current) {
         TextView t = new TextView(ctx);
         t.setText(text);
-        t.setTextColor(th.dim);
-        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        t.setAllCaps(true);
-        t.setLetterSpacing(0.08f);
-        t.setPadding(dp(4), dp(16), 0, dp(8));
+        t.setSingleLine(true);
+        if (current) {
+            t.setTextColor(th.text);
+            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26);
+            t.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+            t.setPadding(0, dp(2), 0, dp(2));
+        } else {
+            t.setTextColor(th.dim);
+            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        }
         return t;
+    }
+
+    /** A choice in the bar: a rounded card with a label (and a small sample on top when given). */
+    private View choice(String label, int sample, boolean selected, boolean light) {
+        final LinearLayout card = new LinearLayout(ctx);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER);
+        card.setPadding(dp(18), dp(14), dp(18), dp(14));
+        card.setFocusable(true);
+        card.setClickable(true);
+        final GradientDrawable bg = new GradientDrawable();
+        bg.setColor(th.pill);
+        bg.setCornerRadius(dp(22));
+        card.setBackground(bg);
+        if (sample != 0) {
+            View chip = new View(ctx);
+            GradientDrawable cb = new GradientDrawable();
+            cb.setColor(sample);
+            cb.setCornerRadius(dp(14));
+            cb.setStroke(dp(1), 0x44888E9C);
+            chip.setBackground(cb);
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(dp(96), dp(52));
+            clp.bottomMargin = dp(10);
+            card.addView(chip, clp);
+        }
+        final TextView t = new TextView(ctx);
+        t.setText((selected ? "\u2713  " : "") + label);
+        t.setTextColor(th.text);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        t.setGravity(Gravity.CENTER);
+        card.addView(t);
+        card.setOnFocusChangeListener((v, focused) -> {
+            bg.setColor(focused ? th.focusBg : th.pill);
+            t.setTextColor(focused ? th.focusText : th.text);
+            v.animate().scaleX(focused ? 1.05f : 1f).scaleY(focused ? 1.05f : 1f).setDuration(110).start();
+        });
+        return card;
+    }
+
+    private void addChoice(LinearLayout row, List<View> items, View v) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.rightMargin = dp(14);
+        row.addView(v, lp);
+        items.add(v);
+    }
+
+    /** Fills the bar's row for setting {@code index}; returns the position of the current choice. */
+    private int buildChoices(final int index, LinearLayout row, final List<View> items) {
+        int selected = 0;
+        switch (index) {
+            case 0: {
+                int[] samples = {0xFF000000, 0xFF171B26, 0xFFF1F3F8, 0xFF1B2A4A};
+                for (int i = 0; i < Theme.MODES.length; i++) {
+                    final String mode = Theme.MODES[i];
+                    boolean on = mode.equals(th.mode);
+                    if (on) {
+                        selected = i;
+                    }
+                    View c = choice(Theme.MODE_NAMES[i], samples[i], on, false);
+                    final int pos = i;
+                    c.setOnClickListener(v -> {
+                        prefs.edit().putString("theme", mode).apply();
+                        looked();
+                        showBar(index, pos);
+                    });
+                    addChoice(row, items, c);
+                }
+                break;
+            }
+            case 1: {
+                final boolean allowed = Theme.DARK.equals(th.mode) || Theme.LIGHT.equals(th.mode);
+                if (!allowed) {
+                    addChoice(row, items, choice("Dark and Light only", 0, false, false));
+                    break;
+                }
+                for (int i = 0; i < 2; i++) {
+                    final boolean value = i == 1;
+                    boolean on = th.aware == value;
+                    if (on) {
+                        selected = i;
+                    }
+                    View c = choice(value ? "On" : "Off", 0, on, false);
+                    final int pos = i;
+                    c.setOnClickListener(v -> {
+                        prefs.edit().putBoolean("aware", value).apply();
+                        looked();
+                        showBar(index, pos);
+                    });
+                    addChoice(row, items, c);
+                }
+                break;
+            }
+            case 2: {
+                for (int i = 0; i < Theme.HL_COLORS.length; i++) {
+                    final int hi = i;
+                    Swatch sw = new Swatch(ctx, i, i == th.hlIndex);
+                    if (i == th.hlIndex) {
+                        selected = i;
+                    }
+                    sw.setOnClickListener(v -> {
+                        prefs.edit().putInt("hl", hi).apply();
+                        looked();
+                        showBar(index, hi);
+                    });
+                    sw.setOnFocusChangeListener((v, f) -> v.invalidate());
+                    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(76), dp(76));
+                    lp.rightMargin = dp(6);
+                    row.addView(sw, lp);
+                    items.add(sw);
+                }
+                break;
+            }
+            case 3: {
+                final String wall = prefs.getString("wall", "none");
+                if (Theme.OLED.equals(th.mode)) {
+                    addChoice(row, items, choice("OLED stays black", 0, false, false));
+                    break;
+                }
+                final List<String> values = new ArrayList<>();
+                final List<String> labels = new ArrayList<>();
+                values.add("none");
+                labels.add("Off");
+                for (int i = 0; i < Wallpaper.BUILTIN_NAMES.length; i++) {
+                    values.add("b" + i);
+                    labels.add(Wallpaper.BUILTIN_NAMES[i]);
+                }
+                for (int i = 0; i < Wallpaper.SRC_IDS.length; i++) {
+                    values.add("d:" + Wallpaper.SRC_IDS[i]);
+                    labels.add("Daily \u00B7 " + Wallpaper.SRC_NAMES[i]);
+                }
+                for (int i = 0; i < values.size(); i++) {
+                    final String value = values.get(i);
+                    boolean on = value.equals(wall) || (i == 0 && Wallpaper.builtinIndex(wall) < 0
+                            && Wallpaper.source(wall) == null);
+                    if (on) {
+                        selected = i;
+                    }
+                    View c = choice(labels.get(i), 0, on, false);
+                    final int pos = i;
+                    c.setOnClickListener(v -> {
+                        prefs.edit().putString("wall", value).apply();
+                        looked();
+                        showBar(index, pos);
+                    });
+                    addChoice(row, items, c);
+                }
+                break;
+            }
+            case 4: {
+                final boolean fahr = Weather.fahrenheit(prefs);
+                if (askCity != null) {
+                    String city = Weather.city(prefs);
+                    View c = choice("City \u00B7 " + (city.isEmpty() ? "Not set" : city), 0, false, false);
+                    c.setOnClickListener(v -> askCity.run());
+                    addChoice(row, items, c);
+                }
+                for (int i = 0; i < 2; i++) {
+                    final boolean f = i == 1;
+                    boolean on = fahr == f;
+                    if (on) {
+                        selected = items.size();
+                    }
+                    View c = choice(f ? "\u00B0F" : "\u00B0C", 0, on, false);
+                    final int pos = items.size();
+                    c.setOnClickListener(v -> {
+                        prefs.edit().putString("units", f ? "f" : "c").apply();
+                        looked();
+                        showBar(index, pos);
+                    });
+                    addChoice(row, items, c);
+                }
+                break;
+            }
+            default: {
+                Set<String> hidden = prefs.getStringSet("hidden", new HashSet<String>());
+                if (!hidden.isEmpty()) {
+                    View c = choice("Show " + hidden.size() + " hidden apps", 0, false, false);
+                    c.setOnClickListener(v -> {
+                        prefs.edit().remove("hidden").apply();
+                        homeChanged();
+                    });
+                    addChoice(row, items, c);
+                }
+                final boolean storeOn = prefs.getBoolean("store", true);
+                View store = choice("Play Store apps \u00B7 " + (storeOn ? "On" : "Off"), 0, false, false);
+                store.setOnClickListener(v -> {
+                    prefs.edit().putBoolean("store", !storeOn).apply();
+                    homeChanged();
+                });
+                addChoice(row, items, store);
+                final boolean demoOn = prefs.getBoolean("demo", false);
+                View demo = choice("Demo cards \u00B7 " + (demoOn ? "On" : "Off"), 0, false, false);
+                demo.setOnClickListener(v -> {
+                    prefs.edit().putBoolean("demo", !demoOn).apply();
+                    homeChanged();
+                });
+                addChoice(row, items, demo);
+                View order = choice("Reset app order", 0, false, false);
+                order.setOnClickListener(v -> {
+                    prefs.edit().remove("order").apply();
+                    homeChanged();
+                });
+                addChoice(row, items, order);
+                break;
+            }
+        }
+        return selected;
     }
 
     private TextView pill(String text) {
@@ -302,7 +509,7 @@ final class SettingsPanel {
         t.setText(text);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         t.setTextColor(th.text);
-        t.setPadding(dp(22), dp(10), dp(22), dp(10));
+        t.setPadding(dp(22), dp(12), dp(22), dp(12));
         t.setFocusable(true);
         t.setClickable(true);
         final GradientDrawable bg = new GradientDrawable();

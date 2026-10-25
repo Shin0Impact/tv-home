@@ -69,6 +69,8 @@ public class KeyService extends AccessibilityService {
      * activity this does not pause the video underneath. If Android refuses the window, falls back
      * to the activity version.
      */
+    private SettingsPanel settings;
+
     private void togglePanel() {
         if (overlay != null) {
             closePanel();
@@ -84,6 +86,10 @@ public class KeyService extends AccessibilityService {
                     if (code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_SETTINGS
                             || code == KeyEvent.KEYCODE_NOTIFICATION) {
                         if (e.getAction() == KeyEvent.ACTION_UP) {
+                            // In TV Home settings, Back first leaves the bottom bar.
+                            if (code == KeyEvent.KEYCODE_BACK && settings != null && settings.back()) {
+                                return true;
+                            }
                             closePanel();
                         }
                         return true;
@@ -95,6 +101,7 @@ public class KeyService extends AccessibilityService {
             final View panel = new QuickPanel(this, this::closePanel, () -> {
                 // Settings open in this same window, over the app, instead of going to the home screen.
                 box.removeAllViews();
+                box.setBackgroundColor(0); // the settings draw their own dim
                 SettingsPanel sp = new SettingsPanel(this, this::closePanel, () -> {
                     // Change the home screen right away, even while it is behind another app.
                     HomeActivity home = HomeActivity.current;
@@ -102,8 +109,9 @@ public class KeyService extends AccessibilityService {
                         home.applyThemeQuietly();
                     }
                 }, null, null);
+                settings = sp;
                 box.addView(sp.build(), new FrameLayout.LayoutParams(
-                        (int) (400 * density + 0.5f), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END));
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
                 box.requestFocus();
             }).build();
             FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(
@@ -113,10 +121,9 @@ public class KeyService extends AccessibilityService {
             WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
                     WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                    WindowManager.LayoutParams.FLAG_DIM_BEHIND
-                            | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                     PixelFormat.TRANSLUCENT);
-            lp.dimAmount = 0.5f;
+            holder.setBackgroundColor(0x80000000);
             wm.addView(holder, lp);
             overlay = holder;
             holder.requestFocus();
@@ -134,6 +141,7 @@ public class KeyService extends AccessibilityService {
     private void closePanel() {
         View v = overlay;
         overlay = null;
+        settings = null;
         if (v == null) {
             return;
         }
