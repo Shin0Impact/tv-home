@@ -1353,7 +1353,9 @@ public class HomeActivity extends Activity {
         if (focusedApp != null && focusedApp.pkg.equals(a.pkg)) {
             return;
         }
-        ui.postDelayed(heroSwitch, 120);
+        // Wait for an up/down scroll to finish: swapping the hero in the middle of it is what stutters.
+        long wait = Math.max(120L, scrollEndsAt - android.os.SystemClock.uptimeMillis() + 30L);
+        ui.postDelayed(heroSwitch, wait);
     }
 
     private void applyHeroApp(App a) {
@@ -1948,15 +1950,43 @@ public class HomeActivity extends Activity {
         }
     }
 
-    private void animateScroll(View scroller, String property, int to) {
+    /** When the current up/down scroll finishes; the hero waits for it so nothing else competes with it. */
+    private long scrollEndsAt;
+
+    private void animateScroll(final View scroller, String property, int to) {
         ObjectAnimator old = scrollAnims.get(scroller);
         if (old != null) {
             old.cancel();
         }
+        final boolean vertical = "scrollY".equals(property);
+        int from = vertical ? scroller.getScrollY() : scroller.getScrollX();
+        int dist = Math.abs(to - from);
+        // Longer for longer moves and a gentle ease-out: a fixed quick jump looks like stutter and
+        // after-images on a TV, because each step is a big leap between frames.
+        long dur = fastKeys ? 90 : Math.max(240, Math.min(440, 190 + dist / 3));
         ObjectAnimator anim = ObjectAnimator.ofInt(scroller, property, to);
-        anim.setDuration(fastKeys ? 70 : 190);
-        anim.setInterpolator(new DecelerateInterpolator());
+        anim.setDuration(dur);
+        anim.setInterpolator(new android.view.animation.PathInterpolator(0.2f, 0f, 0f, 1f));
         scrollAnims.put(scroller, anim);
+        if (vertical) {
+            scrollEndsAt = android.os.SystemClock.uptimeMillis() + dur;
+            // Draw the whole page once as a picture and just slide that picture while scrolling.
+            final View page = ((ViewGroup) scroller).getChildAt(0);
+            if (page != null) {
+                page.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+                anim.addListener(new android.animation.AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationEnd(android.animation.Animator a) {
+                        page.setLayerType(View.LAYER_TYPE_NONE, null);
+                    }
+
+                    @Override
+                    public void onAnimationCancel(android.animation.Animator a) {
+                        page.setLayerType(View.LAYER_TYPE_NONE, null);
+                    }
+                });
+            }
+        }
         anim.start();
     }
 
