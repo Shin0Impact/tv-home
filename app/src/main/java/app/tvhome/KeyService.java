@@ -42,6 +42,18 @@ public class KeyService extends AccessibilityService {
             }
             return true;
         }
+        if ((key == KeyEvent.KEYCODE_VOLUME_UP || key == KeyEvent.KEYCODE_VOLUME_DOWN
+                || key == KeyEvent.KEYCODE_VOLUME_MUTE) && overlay != null) {
+            // The TV draws its volume bar below our window: step aside for a few seconds so it shows.
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                final View v = overlay;
+                v.setAlpha(0f);
+                v.removeCallbacks(showAgain);
+                showAgainView = v;
+                v.postDelayed(showAgain, 3000);
+            }
+            return false;
+        }
         boolean panel = key == KeyEvent.KEYCODE_NOTIFICATION || key == KeyEvent.KEYCODE_SETTINGS;
         boolean profile = key == KeyEvent.KEYCODE_PROFILE_SWITCH;
         if (!panel && !profile) {
@@ -63,6 +75,12 @@ public class KeyService extends AccessibilityService {
     }
 
     private View overlay;
+    private View showAgainView;
+    private final Runnable showAgain = () -> {
+        if (showAgainView != null) {
+            showAgainView.setAlpha(1f);
+        }
+    };
 
     /**
      * Shows the quick settings as a window drawn over whatever is on screen. Unlike opening an
@@ -75,6 +93,15 @@ public class KeyService extends AccessibilityService {
         if (overlay != null) {
             closePanel();
             return;
+        }
+        if (HomeActivity.visible != null) {
+            // On the home screen nothing is playing: a normal screen is fine, and the volume bar shows above it.
+            try {
+                startActivity(new Intent(this, PanelActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                return;
+            } catch (Exception ignored) {
+                // fall through to the overlay
+            }
         }
         try {
             final WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);

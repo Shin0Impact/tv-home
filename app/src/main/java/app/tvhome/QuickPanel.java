@@ -80,6 +80,7 @@ final class QuickPanel {
         date.setPadding(dp(4), dp(2), 0, dp(16));
         panel.addView(date);
 
+
         ScrollView sv = new ScrollView(ctx);
         sv.setVerticalScrollBarEnabled(false);
         sv.setClipToPadding(false);
