@@ -557,11 +557,20 @@ public class HomeActivity extends Activity {
         root.addView(wallView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         wallScrim = new View(this);
-        wallScrim.setBackgroundColor(th.light ? 0x99FFFFFF
-                : Theme.COLOUR.equals(th.mode) ? ((th.bgB & 0x00FFFFFF) | 0xAA000000) : 0x8C000000);
+        FrameLayout.LayoutParams scrimLp;
+        if (th.light) {
+            // Light: no white film over the picture; only a soft fade at the top for the clock and buttons.
+            wallScrim.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                    new int[]{0xB3FFFFFF, 0x00FFFFFF}));
+            scrimLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(170));
+        } else {
+            wallScrim.setBackgroundColor(Theme.COLOUR.equals(th.mode)
+                    ? ((th.bgB & 0x00FFFFFF) | 0xAA000000) : 0x8C000000);
+            scrimLp = new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        }
         wallScrim.setVisibility(View.GONE);
-        root.addView(wallScrim, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        root.addView(wallScrim, scrimLp);
 
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);

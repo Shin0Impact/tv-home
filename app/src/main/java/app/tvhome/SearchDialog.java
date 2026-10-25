@@ -11,6 +11,7 @@ import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.util.Log;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.util.TypedValue;
@@ -60,6 +61,7 @@ final class SearchDialog {
         // Every app on the home screen that can take a search (a standard search, Google's app
         // search action, or "play from search") gets its own row, so this list builds itself.
         final Map<String, String[]> searchable = searchableApps(act, pkgs);
+        Log.i("TVHomeSearch", "searchable apps: " + java.util.Arrays.deepToString(searchable.entrySet().toArray()));
         final SharedPreferences usePrefs = act.getSharedPreferences("home", Activity.MODE_PRIVATE);
 
         // The field.
@@ -290,6 +292,7 @@ final class SearchDialog {
 
     private static void searchIn(Activity act, String pkg, String[] how, String query) {
         recordUse(act.getSharedPreferences("home", Activity.MODE_PRIVATE), pkg);
+        Log.i("TVHomeSearch", "search in " + pkg + " how=" + java.util.Arrays.toString(how) + " query=" + query);
         Intent i;
         if ("link".equals(how[0])) {
             String q = how[1].startsWith("spotify:") ? query : Uri.encode(query);
@@ -305,9 +308,11 @@ final class SearchDialog {
             }
         }
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        Log.i("TVHomeSearch", "intent " + i.toUri(0) + " extras=" + i.getExtras());
         try {
             act.startActivity(i);
         } catch (Exception e) {
+            Log.w("TVHomeSearch", "failed: " + e);
             Toast.makeText(act, "That app couldn't search", Toast.LENGTH_SHORT).show();
         }
     }

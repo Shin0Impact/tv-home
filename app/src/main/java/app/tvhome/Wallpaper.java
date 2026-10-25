@@ -19,8 +19,8 @@ final class Wallpaper {
 
     static final String[] BUILTIN_NAMES = {"Aurora", "Dusk", "Ocean", "Forest", "Ember", "Mist"};
 
-    static final String[] SRC_IDS = {"bing", "nasa", "wiki", "picsum"};
-    static final String[] SRC_NAMES = {"Bing daily", "NASA picture of the day", "Wikipedia picture of the day",
+    static final String[] SRC_IDS = {"bing", "art", "wiki", "picsum"};
+    static final String[] SRC_NAMES = {"Bing daily", "Artwork of the day", "Wikipedia picture of the day",
             "Random photo"};
 
     /** Dark designs: three gradient colours, then two soft glows. */
@@ -57,6 +57,9 @@ final class Wallpaper {
     }
 
     static String source(String wall) {
+        if ("d:nasa".equals(wall)) {
+            return "art"; // NASA was replaced
+        }
         return wall != null && wall.startsWith("d:") ? wall.substring(2) : null;
     }
 
@@ -75,7 +78,7 @@ final class Wallpaper {
     }
 
     private static String today() {
-        return new SimpleDateFormat("yyyyMMdd", Locale.US).format(new Date()) + "v2"; // v2: forget pictures saved by older versions
+        return new SimpleDateFormat("yyyyMMdd", Locale.US).format(new Date()) + "v3"; // v2: forget pictures saved by older versions
     }
 
     private static File dir(Context ctx) {
@@ -132,29 +135,22 @@ final class Wallpaper {
                 String u = new JSONObject(json).getJSONArray("images").getJSONObject(0).getString("url");
                 return u.startsWith("http") ? u : "https://www.bing.com" + u;
             }
-            if ("nasa".equals(src)) {
-                String json = Net.text("https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY");
-                if (json != null) {
-                    JSONObject o = new JSONObject(json);
-                    if ("image".equals(o.optString("media_type")) && o.optString("url", "").startsWith("http")) {
-                        return o.optString("url");
+            if ("art".equals(src)) {
+                // Public-domain paintings from the Art Institute of Chicago (no key needed); a different one each day.
+                String json = Net.text("https://api.artic.edu/api/v1/artworks/search?q=landscape"
+                        + "&query%5Bterm%5D%5Bis_public_domain%5D=true&fields=id,image_id&limit=60");
+                if (json == null) {
+                    return null;
+                }
+                org.json.JSONArray data = new JSONObject(json).getJSONArray("data");
+                int day = (int) (System.currentTimeMillis() / 86400000L);
+                for (int k = 0; k < data.length(); k++) {
+                    String id = data.getJSONObject((day + k) % data.length()).optString("image_id", "");
+                    if (!id.isEmpty() && !"null".equals(id)) {
+                        return "https://www.artic.edu/iiif/2/" + id + "/full/1686,/0/default.jpg";
                     }
                 }
-                // The free demo key is often used up, and some days the picture is a video: use a
-                // picture from NASA's image library instead (a different one each day).
-                // Otherwise: the latest picture of the whole Earth from NASA's DSCOVR satellite.
-                String epic = Net.text("https://epic.gsfc.nasa.gov/api/natural");
-                if (epic == null) {
-                    return null;
-                }
-                org.json.JSONArray arr = new org.json.JSONArray(epic);
-                if (arr.length() == 0) {
-                    return null;
-                }
-                JSONObject e = arr.getJSONObject(arr.length() / 2);
-                String[] ymd = e.getString("date").substring(0, 10).split("-");
-                return "https://epic.gsfc.nasa.gov/archive/natural/" + ymd[0] + "/" + ymd[1] + "/" + ymd[2]
-                        + "/jpg/" + e.getString("image") + ".jpg";
+                return null;
             }
             if ("wiki".equals(src)) {
                 String d = new SimpleDateFormat("yyyy/MM/dd", Locale.US).format(new Date());
