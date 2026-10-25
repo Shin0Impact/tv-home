@@ -699,7 +699,7 @@ public class HomeActivity extends Activity {
             boolean f = isFocused();
             p.setStyle(Paint.Style.FILL);
             p.setColor(f ? th.focusBg : th.pill);
-            cv.drawRoundRect(0, 0, w, h, h / 2, p);
+            cv.drawRoundRect(0, 0, w, h, h / 2, h / 2, p);
             int ink = f ? th.focusText : th.text;
             Icons.draw(cv, Icons.SEARCH, dp(26), h / 2, dp(26), ink, f ? th.focusBg : th.pill);
             p.setColor(f ? th.focusText : th.dim);
