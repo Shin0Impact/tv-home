@@ -1162,11 +1162,27 @@ public class HomeActivity extends Activity {
             bindSlot(slots[i], idx + slots[i].rel);
             applyRel(slots[i], false);
         }
+        heroRoot.animate().cancel();
         if (animate && !sameApp) {
+            // Slide the new app's cards in from the side the focus moved towards, like the timed rotation.
+            int from = -1;
+            int to = -1;
+            for (int i = 0; i < shownApps.size(); i++) {
+                String p = shownApps.get(i).pkg;
+                if (stageApp != null && p.equals(stageApp)) {
+                    from = i;
+                }
+                if (focusedApp != null && p.equals(focusedApp.pkg)) {
+                    to = i;
+                }
+            }
+            int dir = (from >= 0 && to >= 0 && to < from) ? -1 : 1;
+            heroRoot.setTranslationX(dir * cardW * 0.55f);
             heroRoot.setAlpha(0f);
-            heroRoot.animate().alpha(1f).setDuration(260).start();
+            heroRoot.animate().translationX(0f).alpha(1f).setDuration(320)
+                    .setInterpolator(new DecelerateInterpolator()).start();
         } else {
-            heroRoot.animate().cancel();
+            heroRoot.setTranslationX(0f);
             heroRoot.setAlpha(1f);
         }
         stageApp = focusedApp == null ? null : focusedApp.pkg;
