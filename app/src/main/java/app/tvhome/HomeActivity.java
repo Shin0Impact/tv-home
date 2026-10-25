@@ -871,8 +871,12 @@ public class HomeActivity extends Activity {
         cardBg.setColor(th.card);
         cardBg.setCornerRadius(radius);
         card.setBackground(cardBg);
-        card.setClipToOutline(true);
-        card.setOutlineProvider(rounded(radius));
+        // Only a full-size banner needs its corners cut; a small centred icon never reaches them,
+        // and every rounded clip costs the weak GPU time on every frame.
+        if (banner != null) {
+            card.setClipToOutline(true);
+            card.setOutlineProvider(rounded(radius));
+        }
 
         ImageView img = new ImageView(this);
         if (banner != null) {
@@ -1023,6 +1027,9 @@ public class HomeActivity extends Activity {
         heroRoot.setClickable(true);
         heroRoot.setClipChildren(false);
         heroRoot.setClipToPadding(false);
+        // Fading the whole hero would otherwise draw all five cards into a separate big picture
+        // first, on every frame of the slide-in. The cards never overlap, so this is safe.
+        heroRoot.setHasOverlappingRendering(false);
 
         slots = new Slot[5];
         for (int i = 0; i < slots.length; i++) {
@@ -1071,7 +1078,8 @@ public class HomeActivity extends Activity {
             visible = false;
         }
         // Side cards are dimmed with a dark tint, not by fading them: fading makes them look washed out on a light background.
-        float al = visible ? (a == 0 ? 1f : 0.9f) : 0f;
+        // Fully opaque when shown: any partial alpha on a card makes the GPU draw it offscreen first.
+        float al = visible ? 1f : 0f;
         int dim = a == 0 ? Color.TRANSPARENT : 0x33000000;
         s.art.setColorFilter(dim);
         s.side.setColorFilter(dim);
