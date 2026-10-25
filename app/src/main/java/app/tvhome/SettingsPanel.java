@@ -630,6 +630,17 @@ final class SettingsPanel {
         });
     }
 
+    private TextView sectionLabel(String text) {
+        TextView t = new TextView(ctx);
+        t.setText(text);
+        t.setTextColor(th.dim);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        t.setAllCaps(true);
+        t.setLetterSpacing(0.08f);
+        t.setPadding(dp(6), dp(12), 0, dp(6));
+        return t;
+    }
+
     private TextView pill(String text) {
         final TextView t = new TextView(ctx);
         t.setText(text);
