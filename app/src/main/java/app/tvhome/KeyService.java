@@ -126,7 +126,16 @@ public class KeyService extends AccessibilityService {
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                     PixelFormat.TRANSLUCENT);
             holder.setBackgroundColor(0x80000000);
-            wm.addView(holder, lp);
+            try {
+                wm.addView(holder, lp);
+            } catch (Exception first) {
+                // The lower layer was refused: use the accessibility layer (it sits above the volume bar).
+                android.util.Log.w("TVHomeKey", "app overlay refused: " + first);
+                lp.type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY;
+                wm.addView(holder, lp);
+            }
+            android.util.Log.i("TVHomeKey", "panel type " + lp.type + " (2038 = app overlay, 2032 = accessibility)"
+                    + " canDrawOverlays=" + android.provider.Settings.canDrawOverlays(this));
             overlay = holder;
             holder.requestFocus();
         } catch (Exception e) {
