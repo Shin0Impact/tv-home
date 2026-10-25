@@ -548,6 +548,8 @@ public class HomeActivity extends Activity {
         bgDrawable = new Backdrop();
         bgDrawable.set(new int[]{th.bgA, th.bgB, th.bgC}, th.blobA, th.blobB);
         root.setBackground(bgDrawable);
+        // The window's own black background would be one more full-screen layer under ours.
+        getWindow().setBackgroundDrawable(null);
         tintColor = 0;
 
         // Optional picture-of-the-day wallpaper, with a theme-coloured veil so text stays readable.
@@ -2515,8 +2517,12 @@ public class HomeActivity extends Activity {
         final String src = th.picture ? Wallpaper.source(th.wall) : null;
         if (src == null) {
             wv.setImageDrawable(null);
+            wv.setColorFilter(null);
             wv.setVisibility(View.GONE);
             veil.setVisibility(View.GONE);
+            if (wv.getParent() instanceof View && bgDrawable != null) {
+                ((View) wv.getParent()).setBackground(bgDrawable);
+            }
             return;
         }
         if (net.isShutdown()) {
@@ -2544,7 +2550,28 @@ public class HomeActivity extends Activity {
             }
             wv.setImageBitmap(b);
             wv.setVisibility(View.VISIBLE);
-            veil.setVisibility(View.VISIBLE);
+            // The picture covers the whole screen, so the gradient under it is wasted work: drop it.
+            if (wv.getParent() instanceof View) {
+                ((View) wv.getParent()).setBackground(null);
+            }
+            if (th.light) {
+                // Light: only a soft fade at the top, drawn by the small veil view.
+                wv.setColorFilter(null);
+                veil.setVisibility(View.VISIBLE);
+            } else {
+                // Dark/colour: darken the picture itself instead of laying a second full-screen
+                // layer over it (one pass less for the GPU on every frame).
+                boolean colour = Theme.COLOUR.equals(th.mode);
+                float a = colour ? 0xAA / 255f : 0x8C / 255f;
+                int mul = Math.round((1f - a) * 255f);
+                int c = colour ? th.bgB : 0;
+                int add = ((Math.round(((c >> 16) & 0xFF) * a) & 0xFF) << 16)
+                        | ((Math.round(((c >> 8) & 0xFF) * a) & 0xFF) << 8)
+                        | (Math.round((c & 0xFF) * a) & 0xFF);
+                wv.setColorFilter(new android.graphics.LightingColorFilter(
+                        (mul << 16) | (mul << 8) | mul, add));
+                veil.setVisibility(View.GONE);
+            }
         });
     }
 
