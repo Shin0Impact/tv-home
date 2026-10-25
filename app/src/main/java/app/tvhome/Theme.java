@@ -87,9 +87,10 @@ final class Theme {
             t.focusText = t.light ? 0xFFFFFFFF : 0xFF0A0E1A;
             t.accent = blue;
         } else if (hlIndex == 1) {
-            t.ring = 0xFFFFFFFF;
-            t.focusBg = 0xFFFFFFFF;
-            t.focusText = 0xFF000000;
+            // Pure white on dark themes, pure black on Light, so it always shows.
+            t.ring = t.light ? 0xFF000000 : 0xFFFFFFFF;
+            t.focusBg = t.ring;
+            t.focusText = t.light ? 0xFFFFFFFF : 0xFF000000;
             t.accent = blue;
         } else {
             t.ring = HL_COLORS[hlIndex];
@@ -102,7 +103,7 @@ final class Theme {
             t.bgA = 0xFFE3E9F5;
             t.bgB = 0xFFF4F1EE;
             t.bgC = 0xFFE1E7F1;
-            t.panel = 0xB3FFFFFF;
+            t.panel = 0x29141E3C; // a soft darker band, so white app banners stand out
             t.sheet = 0xF5F4F6FA;
             t.card = 0xFFD5DAE4;
             t.pill = 0xFFFFFFFF;
@@ -141,7 +142,17 @@ final class Theme {
             t.text = 0xFFFFFFFF;
             t.dim = 0xFF9AA3B8;
         }
+        // A highlight too close to the button colour would vanish (white on white): fall back to the text colour.
+        if (Math.abs(lum(t.focusBg) - lum(t.pill)) < 40) {
+            t.focusBg = t.text;
+            t.ring = t.text;
+            t.focusText = onColor(t.text);
+        }
         return t;
+    }
+
+    private static int lum(int c) {
+        return (((c >> 16) & 0xFF) * 299 + ((c >> 8) & 0xFF) * 587 + (c & 0xFF) * 114) / 1000;
     }
 
     /** Background colours for content-aware mode, from one colour taken from the picture. */

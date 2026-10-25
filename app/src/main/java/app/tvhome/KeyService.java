@@ -23,6 +23,13 @@ public class KeyService extends AccessibilityService {
     @Override
     protected boolean onKeyEvent(KeyEvent event) {
         int key = event.getKeyCode();
+        if (key == KeyEvent.KEYCODE_HOME && overlay != null) {
+            // Home closes the panel too, then Android takes you home as usual.
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                closePanel();
+            }
+            return false;
+        }
         if (key == KeyEvent.KEYCODE_HOME) {
             // Home pressed while TV Home is already showing: scroll to the top. From any other app
             // we do nothing here and Android takes you home as usual.
@@ -88,7 +95,13 @@ public class KeyService extends AccessibilityService {
             final View panel = new QuickPanel(this, this::closePanel, () -> {
                 // Settings open in this same window, over the app, instead of going to the home screen.
                 box.removeAllViews();
-                SettingsPanel sp = new SettingsPanel(this, this::closePanel, null, null);
+                SettingsPanel sp = new SettingsPanel(this, this::closePanel, () -> {
+                    // Change the home screen right away, even while it is behind another app.
+                    HomeActivity home = HomeActivity.current;
+                    if (home != null) {
+                        home.applyThemeQuietly();
+                    }
+                }, null);
                 box.addView(sp.build(), new FrameLayout.LayoutParams(
                         (int) (400 * density + 0.5f), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END));
                 box.requestFocus();

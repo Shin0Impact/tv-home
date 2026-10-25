@@ -233,6 +233,8 @@ public class HomeActivity extends Activity {
     private String lastFocusPkg;
     /** The home screen while it is showing; the accessibility service uses it for Home-on-Home. */
     static volatile HomeActivity visible;
+    /** The running instance even while another app is in front (null once destroyed). */
+    static volatile HomeActivity current;
     private boolean onScreen;
     private boolean openSettingsOnResume;
     private String focusAfter;
@@ -261,6 +263,7 @@ public class HomeActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        current = this;
         prefs = getSharedPreferences("home", MODE_PRIVATE);
         th = Theme.load(prefs);
         // Opened from the quick settings' TV Home button while this screen was not running.
@@ -331,7 +334,7 @@ public class HomeActivity extends Activity {
             focusedApp = null;
             heroItems = new ArrayList<>();
             heroBase = false;
-            rebuildForTheme();
+            rebuildForTheme(false);
         }
         if (openSettingsOnResume) {
             openSettingsOnResume = false;
@@ -456,6 +459,9 @@ public class HomeActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (current == this) {
+            current = null;
+        }
         io.shutdown();
         net.shutdown();
     }
@@ -878,7 +884,11 @@ public class HomeActivity extends Activity {
         } else {
             visible = false;
         }
-        float al = visible ? (a == 0 ? 1f : 0.8f) : 0f;
+        // Side cards are dimmed with a dark tint, not by fading them: fading makes them look washed out on a light background.
+        float al = visible ? 1f : 0f;
+        int dim = a == 0 ? Color.TRANSPARENT : 0x59000000;
+        s.art.setColorFilter(dim);
+        s.side.setColorFilter(dim);
         if (animate) {
             s.root.animate().translationX(tx).scaleX(sc).scaleY(sc).alpha(al)
                     .setDuration(340).setInterpolator(new DecelerateInterpolator()).start();
@@ -2193,33 +2203,26 @@ public class HomeActivity extends Activity {
 
     /** Rebuilds the whole screen with the colours of the chosen theme. */
     private void applyTheme() {
-        // Freeze what is on screen, rebuild underneath, then fade the old picture away.
-        final ViewGroup decor = (ViewGroup) getWindow().getDecorView();
-        ImageView snap = null;
-        try {
-            if (decor.getWidth() > 0 && decor.getHeight() > 0) {
-                Bitmap shot = Bitmap.createBitmap(decor.getWidth(), decor.getHeight(), Bitmap.Config.ARGB_8888);
-                decor.draw(new Canvas(shot));
-                snap = new ImageView(this);
-                snap.setImageBitmap(shot);
-                decor.addView(snap, new android.widget.FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-            }
-        } catch (Throwable ignored) {
-            snap = null; // no fade, just switch
-        }
-        rebuildForTheme();
-        if (snap != null) {
-            final ImageView old = snap;
-            old.animate().alpha(0f).setDuration(450).withEndAction(() -> decor.removeView(old)).start();
-        }
+        rebuildForTheme(true);
     }
 
-    private void rebuildForTheme() {
+    /** Applies the chosen theme without any animation (used while another app is on screen). */
+    void applyThemeQuietly() {
+        ui.post(() -> rebuildForTheme(false));
+    }
+
+    /**
+     * Rebuilds the screen with the colours of the chosen theme. The new screen is built underneath
+     * the old one, and the old one is faded out, so nothing flashes.
+     */
+    private void rebuildForTheme(boolean fade) {
         th = Theme.load(prefs);
         if (tintAnim != null) {
             tintAnim.cancel();
         }
+        final ViewGroup content = (ViewGroup) findViewById(android.R.id.content);
+        final View oldRoot = fade && content != null && content.getChildCount() > 0
+                ? content.getChildAt(0) : null;
         heroRoot = null;
         slots = null;
         heroRing = null;
@@ -2229,8 +2232,18 @@ public class HomeActivity extends Activity {
         firstCell = null;
         tiles.clear();
         scrollAnims.clear();
-        setContentView(buildRoot(pad));
+        View fresh = buildRoot(pad);
+        if (oldRoot != null) {
+            content.addView(fresh, 0, new android.widget.FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        } else {
+            setContentView(fresh);
+        }
         refresh(true);
+        if (oldRoot != null) {
+            oldRoot.animate().alpha(0f).setDuration(350)
+                    .withEndAction(() -> content.removeView(oldRoot)).start();
+        }
     }
 
     /** TV Home's own settings, shown in a side dialog (the same view the quick settings can draw over an app). */
