@@ -1323,7 +1323,7 @@ public class HomeActivity extends Activity {
         if (focusedApp != null && focusedApp.pkg.equals(a.pkg)) {
             return;
         }
-        ui.postDelayed(heroSwitch, 600);
+        ui.postDelayed(heroSwitch, 120);
     }
 
     private void applyHeroApp(App a) {
