@@ -109,6 +109,9 @@ public class HomeActivity extends Activity {
         Intent launch;
         Drawable banner;
         Drawable icon;
+        /** Set for a folder tile: its id, and the apps inside it. */
+        String folderId;
+        List<App> children;
     }
 
     /** One card of the hero: either something playing in an app, or the app itself. */
@@ -216,7 +219,6 @@ public class HomeActivity extends Activity {
     private ScrollView scroll;
     private LinearLayout grid;
     private View headerView;
-    private TextView unhideBtn;
     private TextView weatherView;
     private ImageView wallView;
     private View wallScrim;
@@ -655,15 +657,6 @@ public class HomeActivity extends Activity {
         sbLp.rightMargin = dp(22);
         header.addView(searchBar, sbLp);
 
-        unhideBtn = pill("Show hidden");
-        unhideBtn.setVisibility(View.GONE);
-        unhideBtn.setOnClickListener(v -> {
-            prefs.edit().remove("hidden").apply();
-            refresh(true);
-        });
-        header.addView(unhideBtn, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
 
         IconButton wifi = new IconButton(this, IconButton.WIFI);
         wifi.setOnClickListener(v -> safeStart(new Intent(Settings.ACTION_WIFI_SETTINGS)));
@@ -913,6 +906,7 @@ public class HomeActivity extends Activity {
         label.setSingleLine(true);
         label.setEllipsize(TextUtils.TruncateAt.END);
         label.setPadding(dp(2), dp(8), dp(2), 0);
+        label.setGravity(Gravity.CENTER_HORIZONTAL);
         if (showLabel) {
             cell.addView(label, new LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
@@ -941,10 +935,18 @@ public class HomeActivity extends Activity {
             base.onFocusChange(v, focused);
             if (focused) {
                 lastFocusPkg = a.pkg;
-                setHeroApp(a);
+                if (a.children == null) {
+                    setHeroApp(a); // a folder has nothing to show: the hero keeps the last app's cards
+                }
             }
         });
-        cell.setOnClickListener(v -> launch(a));
+        cell.setOnClickListener(v -> {
+            if (a.children != null) {
+                openFolder(a);
+            } else {
+                launch(a);
+            }
+        });
         cell.setOnLongClickListener(v -> {
             showMenu(a);
             return true;
@@ -1373,6 +1375,9 @@ public class HomeActivity extends Activity {
     }
 
     private void applyHeroApp(App a) {
+        if (a.children != null) {
+            return;
+        }
         if (STORE_PKG.equals(a.pkg)) {
             maybeLoadStore();
         }
@@ -1897,8 +1902,9 @@ public class HomeActivity extends Activity {
 
     /** Brings the focused tile into view with a short eased animation instead of an instant jump. */
     private void ensureVisible(View cell) {
-        if (cell.getHeight() == 0 || scroll == null || scroll.getChildCount() == 0) {
-            return;
+        if (cell.getHeight() == 0 || scroll == null || scroll.getChildCount() == 0
+                || cell.getRootView() != scroll.getRootView()) {
+            return; // not on the home page itself (for example, inside an open folder)
         }
         if (cell == heroRoot || cell.getParent() == headerView) {
             animateScroll(scroll, "scrollY", 0); // same position as pressing Home
@@ -2002,6 +2008,7 @@ public class HomeActivity extends Activity {
                 key.append(a.pkg).append(',');
             }
             key.append('|').append(prefs.getString("order", ""));
+            key.append('|').append(prefs.getString("folders", ""));
             final String k = key.toString();
             if (!force && k.equals(lastKey)) {
                 return;
@@ -2013,14 +2020,13 @@ public class HomeActivity extends Activity {
     }
 
     private List<App> queryApps(PackageManager pm, boolean withImages) {
-        Set<String> hidden = prefs.getStringSet("hidden", new HashSet<String>());
         Map<String, App> map = new LinkedHashMap<>();
         String[] categories = {Intent.CATEGORY_LEANBACK_LAUNCHER, Intent.CATEGORY_LAUNCHER};
         for (String category : categories) {
             Intent query = new Intent(Intent.ACTION_MAIN).addCategory(category);
             for (ResolveInfo ri : pm.queryIntentActivities(query, 0)) {
                 String pkg = ri.activityInfo.packageName;
-                if (pkg.equals(getPackageName()) || map.containsKey(pkg) || hidden.contains(pkg)) {
+                if (pkg.equals(getPackageName()) || map.containsKey(pkg)) {
                     continue;
                 }
                 App a = new App();
@@ -2039,6 +2045,46 @@ public class HomeActivity extends Activity {
                 map.put(pkg, a);
             }
         }
+        // Folders: their apps leave the main list and sit behind one folder tile.
+        List<App> folderTiles = new ArrayList<>();
+        JSONArray saved = folderList();
+        for (int i = 0; i < saved.length(); i++) {
+            JSONObject fo = saved.optJSONObject(i);
+            JSONArray names = fo == null ? null : fo.optJSONArray("apps");
+            if (names == null) {
+                continue;
+            }
+            App f = new App();
+            f.folderId = fo.optString("id");
+            f.pkg = "folder:" + f.folderId;
+            f.label = fo.optString("name", "Folder");
+            f.children = new ArrayList<>();
+            for (int k = 0; k < names.length(); k++) {
+                App child = map.remove(names.optString(k));
+                if (child != null) {
+                    f.children.add(child);
+                }
+            }
+            if (f.children.isEmpty()) {
+                continue;
+            }
+            if (withImages) {
+                List<Drawable> pics = new ArrayList<>();
+                List<Boolean> wide = new ArrayList<>();
+                for (int k = 0; k < f.children.size() && k < 4; k++) {
+                    App child = f.children.get(k);
+                    Drawable src = child.banner != null ? child.banner : child.icon;
+                    Drawable copy = null;
+                    if (src != null && src.getConstantState() != null) {
+                        copy = src.getConstantState().newDrawable().mutate();
+                    }
+                    pics.add(copy);
+                    wide.add(child.banner != null);
+                }
+                f.banner = new FolderIcon(pics, wide);
+            }
+            folderTiles.add(f);
+        }
         List<App> list = new ArrayList<>(map.values());
         final List<String> order = listPref("order");
         Collections.sort(list, (x, y) -> {
@@ -2055,6 +2101,29 @@ public class HomeActivity extends Activity {
             }
             return x.label.compareToIgnoreCase(y.label);
         });
+        // A folder without a saved place goes last.
+        Collections.sort(folderTiles, (x, y) -> {
+            int px = order.indexOf(x.pkg);
+            int py = order.indexOf(y.pkg);
+            return (px < 0 ? Integer.MAX_VALUE : px) - (py < 0 ? Integer.MAX_VALUE : py);
+        });
+        for (App f : folderTiles) {
+            int at = order.indexOf(f.pkg);
+            if (at < 0) {
+                list.add(f);
+                continue;
+            }
+            // put it before the first listed app that comes after it in the saved order
+            int pos = list.size();
+            for (int i = 0; i < list.size(); i++) {
+                int oi = order.indexOf(list.get(i).pkg);
+                if (oi > at) {
+                    pos = i;
+                    break;
+                }
+            }
+            list.add(pos, f);
+        }
         return list;
     }
 
@@ -2197,10 +2266,6 @@ public class HomeActivity extends Activity {
             }
         }
 
-        Set<String> hidden = prefs.getStringSet("hidden", new HashSet<String>());
-        unhideBtn.setText("Show " + hidden.size() + " hidden");
-        unhideBtn.setVisibility(hidden.isEmpty() ? View.GONE : View.VISIBLE);
-
         // Keep the hero on the same app across a rebuild.
         if (focusedApp != null) {
             for (App a : apps) {
@@ -2209,8 +2274,15 @@ public class HomeActivity extends Activity {
                 }
             }
         }
-        if (focusedApp == null && !apps.isEmpty()) {
-            applyHeroApp(apps.get(0));
+        App firstReal = null;
+        for (App a : apps) {
+            if (a.children == null) {
+                firstReal = a;
+                break;
+            }
+        }
+        if (focusedApp == null && firstReal != null) {
+            applyHeroApp(firstReal);
         } else if (stageApp == null) {
             showHero(false); // the screen was rebuilt (a new theme): draw the cards again
         }
@@ -2357,33 +2429,64 @@ public class HomeActivity extends Activity {
     }
 
     private void showMenu(final App a) {
-        showMenu(a, false);
+        showMenu(a, false, null);
     }
 
-    /** With armed set, the last row reads a red "Are you sure?" and the next click uninstalls. */
-    private void showMenu(final App a, final boolean armed) {
-        final String[] items = {"Move", "Hide from home", "App info", "Force stop",
-                armed ? "Are you sure?" : "Uninstall"};
+    /**
+     * The long-press menu. A folder tile gets Move / Rename / Remove folder; an app on the home
+     * screen gets Move / Add to folder / App info / Force stop / Uninstall; an app inside a folder
+     * gets "Take out of folder" instead of the first two. With armed set, the last row reads a red
+     * "Are you sure?" and the next click uninstalls.
+     */
+    private void showMenu(final App a, final boolean armed, final String inFolder) {
+        final List<String> items = new ArrayList<>();
+        if (a.children != null) {
+            items.add("Move");
+            items.add("Rename");
+            items.add("Remove folder");
+        } else {
+            if (inFolder != null) {
+                items.add("Take out of folder");
+            } else {
+                items.add("Move");
+                items.add("Add to folder");
+            }
+            items.add("App info");
+            items.add("Force stop");
+            items.add(armed ? "Are you sure?" : "Uninstall");
+        }
         dismissDialog();
         AlertDialog d = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle(a.label)
-                .setItems(items, (dialog, which) -> {
-                    if (which == 0) {
+                .setItems(items.toArray(new String[0]), (dialog, which) -> {
+                    String it = items.get(which);
+                    if ("Move".equals(it)) {
                         moveApp = a.pkg;
                         focusAfter = a.pkg;
                         Toast.makeText(this, "Use the arrows to move it, press OK to place it",
                                 Toast.LENGTH_LONG).show();
                         refresh(true);
-                    } else if (which == 1) {
-                        Set<String> hidden = new HashSet<>(
-                                prefs.getStringSet("hidden", new HashSet<String>()));
-                        hidden.add(a.pkg);
-                        prefs.edit().putStringSet("hidden", hidden).apply();
+                    } else if ("Add to folder".equals(it)) {
+                        pickFolder(a);
+                    } else if ("Take out of folder".equals(it)) {
+                        removeFromFolder(inFolder, a.pkg);
+                        focusAfter = a.pkg;
                         refresh(true);
-                    } else if (which == 2) {
+                    } else if ("Rename".equals(it)) {
+                        askName("Rename folder", a.label, name -> {
+                            renameFolder(a.folderId, name);
+                            focusAfter = a.pkg;
+                            refresh(true);
+                        });
+                    } else if ("Remove folder".equals(it)) {
+                        deleteFolder(a.folderId);
+                        Toast.makeText(this, "The apps are back on the home screen",
+                                Toast.LENGTH_SHORT).show();
+                        refresh(true);
+                    } else if ("App info".equals(it)) {
                         safeStart(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                                 Uri.parse("package:" + a.pkg)));
-                    } else if (which == 3) {
+                    } else if ("Force stop".equals(it)) {
                         // Apps cannot truly force-stop each other, but this ends the app's background
                         // processes and frees its memory, which is what matters on this TV.
                         try {
@@ -2402,10 +2505,10 @@ public class HomeActivity extends Activity {
                             // treat as a normal app
                         }
                         if (system) {
-                            Toast.makeText(this, "That is a system app: hide it from home instead",
+                            Toast.makeText(this, "That is a system app: put it in a folder instead",
                                     Toast.LENGTH_LONG).show();
                         } else if (!armed) {
-                            showMenu(a, true);
+                            showMenu(a, true, inFolder);
                         } else {
                             safeStart(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + a.pkg)));
                         }
@@ -2417,13 +2520,273 @@ public class HomeActivity extends Activity {
         if (armed) {
             // Red warning row, already selected so one more OK confirms.
             final android.widget.ListView lv = d.getListView();
-            lv.setSelection(4);
+            final int last = items.size() - 1;
+            lv.setSelection(last);
             lv.post(() -> {
-                View row = lv.getChildAt(4 - lv.getFirstVisiblePosition());
+                View row = lv.getChildAt(last - lv.getFirstVisiblePosition());
                 if (row instanceof TextView) {
                     ((TextView) row).setTextColor(0xFFFF5252);
                 }
             });
+        }
+    }
+
+    // ------------------------------------------------------------------ folders
+
+    private JSONArray folderList() {
+        try {
+            return new JSONArray(prefs.getString("folders", "[]"));
+        } catch (Exception e) {
+            return new JSONArray();
+        }
+    }
+
+    private void saveFolders(JSONArray all) {
+        prefs.edit().putString("folders", all.toString()).apply();
+    }
+
+    private int folderIndex(JSONArray all, String id) {
+        for (int i = 0; i < all.length(); i++) {
+            JSONObject o = all.optJSONObject(i);
+            if (o != null && id.equals(o.optString("id"))) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Takes an app out of every folder, then drops any folder that is now empty. */
+    private void detachFromFolders(JSONArray all, String pkg) {
+        for (int i = 0; i < all.length(); i++) {
+            JSONObject o = all.optJSONObject(i);
+            JSONArray apps = o == null ? null : o.optJSONArray("apps");
+            if (apps == null) {
+                continue;
+            }
+            JSONArray keep = new JSONArray();
+            for (int k = 0; k < apps.length(); k++) {
+                if (!pkg.equals(apps.optString(k))) {
+                    keep.put(apps.optString(k));
+                }
+            }
+            try {
+                o.put("apps", keep);
+            } catch (Exception ignored) {
+                // leave it
+            }
+        }
+        JSONArray left = new JSONArray();
+        for (int i = 0; i < all.length(); i++) {
+            JSONObject o = all.optJSONObject(i);
+            if (o != null && o.optJSONArray("apps") != null && o.optJSONArray("apps").length() > 0) {
+                left.put(o);
+            }
+        }
+        // copy back
+        while (all.length() > 0) {
+            all.remove(all.length() - 1);
+        }
+        for (int i = 0; i < left.length(); i++) {
+            all.put(left.opt(i));
+        }
+    }
+
+    private void addToFolder(String folderId, String pkg) {
+        JSONArray all = folderList();
+        detachFromFolders(all, pkg);
+        int i = folderIndex(all, folderId);
+        if (i >= 0) {
+            JSONArray apps = all.optJSONObject(i).optJSONArray("apps");
+            if (apps != null) {
+                apps.put(pkg);
+            }
+        }
+        saveFolders(all);
+        focusAfter = "folder:" + folderId;
+    }
+
+    /** A new folder takes the place of the app it is made from, so the layout barely changes. */
+    private void createFolder(String name, String firstPkg) {
+        String id = "f" + System.currentTimeMillis();
+        JSONArray all = folderList();
+        detachFromFolders(all, firstPkg);
+        try {
+            JSONObject o = new JSONObject();
+            o.put("id", id);
+            o.put("name", name);
+            JSONArray apps = new JSONArray();
+            apps.put(firstPkg);
+            o.put("apps", apps);
+            all.put(o);
+        } catch (Exception ignored) {
+            return;
+        }
+        saveFolders(all);
+        List<String> cur = new ArrayList<>();
+        for (App a : shownApps) {
+            cur.add(a.pkg);
+        }
+        int at = cur.indexOf(firstPkg);
+        if (at >= 0) {
+            cur.remove(at);
+            cur.add(at, "folder:" + id);
+            saveListPref("order", cur);
+        }
+        focusAfter = "folder:" + id;
+    }
+
+    private void removeFromFolder(String folderId, String pkg) {
+        JSONArray all = folderList();
+        detachFromFolders(all, pkg);
+        saveFolders(all);
+    }
+
+    private void renameFolder(String folderId, String name) {
+        JSONArray all = folderList();
+        int i = folderIndex(all, folderId);
+        if (i >= 0) {
+            try {
+                all.optJSONObject(i).put("name", name);
+            } catch (Exception ignored) {
+                // keep the old name
+            }
+            saveFolders(all);
+        }
+    }
+
+    private void deleteFolder(String folderId) {
+        JSONArray all = folderList();
+        JSONArray left = new JSONArray();
+        for (int i = 0; i < all.length(); i++) {
+            JSONObject o = all.optJSONObject(i);
+            if (o != null && !folderId.equals(o.optString("id"))) {
+                left.put(o);
+            }
+        }
+        saveFolders(left);
+    }
+
+    /** "Add to folder": the existing folders, or a new one. */
+    private void pickFolder(final App a) {
+        final JSONArray all = folderList();
+        final List<String> names = new ArrayList<>();
+        for (int i = 0; i < all.length(); i++) {
+            names.add(all.optJSONObject(i).optString("name"));
+        }
+        names.add("New folder…");
+        dismissDialog();
+        AlertDialog d = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("Add " + a.label + " to")
+                .setItems(names.toArray(new String[0]), (dialog, which) -> {
+                    if (which < all.length()) {
+                        addToFolder(all.optJSONObject(which).optString("id"), a.pkg);
+                        refresh(true);
+                    } else {
+                        askName("New folder", "More apps", name -> {
+                            createFolder(name, a.pkg);
+                            refresh(true);
+                        });
+                    }
+                })
+                .create();
+        openDialog = d;
+        d.show();
+    }
+
+    /** A small text box for naming a folder. */
+    private void askName(String title, String initial, final java.util.function.Consumer<String> done) {
+        dismissDialog();
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setSingleLine(true);
+        input.setText(initial);
+        input.setSelectAllOnFocus(true);
+        AlertDialog d = new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle(title)
+                .setView(input)
+                .setPositiveButton("OK", (dialog, which) -> {
+                    String name = input.getText().toString().trim();
+                    done.accept(name.isEmpty() ? "Folder" : name);
+                })
+                .setNegativeButton("Cancel", null)
+                .create();
+        openDialog = d;
+        d.show();
+        input.requestFocus();
+    }
+
+    /** The inside of a folder: its apps as tiles on a dimmed screen. Back closes it. */
+    private void openFolder(final App f) {
+        dismissDialog();
+        final Dialog d = new Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(0xB3000000);
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setClipChildren(false);
+        card.setClipToPadding(false);
+        card.setPadding(dp(30), dp(26), dp(30), dp(14));
+        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, Theme.grad(th.sheet));
+        bg.setCornerRadius(dp(28));
+        card.setBackground(bg);
+
+        TextView title = new TextView(this);
+        title.setText(f.label);
+        title.setTextColor(th.text);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        title.setPadding(dp(4), 0, 0, dp(16));
+        card.addView(title);
+
+        ScrollView sv = new ScrollView(this);
+        sv.setVerticalScrollBarEnabled(false);
+        sv.setClipToPadding(false);
+        sv.setClipChildren(false);
+        LinearLayout rows = new LinearLayout(this);
+        rows.setOrientation(LinearLayout.VERTICAL);
+        rows.setClipChildren(false);
+        sv.addView(rows, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        final int perRow = 4;
+        LinearLayout row = null;
+        View first = null;
+        for (int i = 0; i < f.children.size(); i++) {
+            if (i % perRow == 0) {
+                row = newRow();
+                LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                rlp.bottomMargin = dp(14);
+                rows.addView(row, rlp);
+            }
+            final App c = f.children.get(i);
+            View cell = makeTile(gridW, c.label, c.banner, c.icon, false, true);
+            cell.setOnClickListener(v -> {
+                d.dismiss();
+                openDialog = null;
+                launch(c);
+            });
+            cell.setOnLongClickListener(v -> {
+                showMenu(c, false, f.folderId);
+                return true;
+            });
+            row.addView(cell, cellParams(gridW));
+            if (first == null) {
+                first = cell;
+            }
+        }
+        card.addView(sv, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        root.addView(card, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+        d.setContentView(root);
+        openDialog = d;
+        d.show();
+        Window window = d.getWindow();
+        if (window != null) {
+            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+        }
+        if (first != null) {
+            first.requestFocus();
         }
     }
 

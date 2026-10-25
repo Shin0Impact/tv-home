@@ -483,15 +483,6 @@ final class SettingsPanel {
                 break;
             }
             default: {
-                Set<String> hidden = prefs.getStringSet("hidden", new HashSet<String>());
-                if (!hidden.isEmpty()) {
-                    View c = choice("Show " + hidden.size() + " hidden apps", 0, false, false);
-                    c.setOnClickListener(v -> {
-                        prefs.edit().remove("hidden").apply();
-                        homeChanged();
-                    });
-                    addChoice(row, items, c);
-                }
                 final boolean storeOn = prefs.getBoolean("store", true);
                 View store = choice("Play Store apps \u00B7 " + (storeOn ? "On" : "Off"), 0, false, false);
                 store.setOnClickListener(v -> {
