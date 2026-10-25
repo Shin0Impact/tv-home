@@ -26,12 +26,18 @@ public class KeyService extends AccessibilityService {
         if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
             android.util.Log.i("TVHomeKey", "onKeyEvent key=" + key + " menuOpen=" + (overlay != null));
         }
+        if (key == KeyEvent.KEYCODE_HOME && event.getAction() == KeyEvent.ACTION_UP && swallowHomeUp) {
+            // The release of the press that jumped back: if it reached the TV, it would go home again.
+            swallowHomeUp = false;
+            return true;
+        }
         if (key == KeyEvent.KEYCODE_HOME && event.getAction() == KeyEvent.ACTION_DOWN
                 && event.getRepeatCount() == 0) {
             // Pressing Home twice quickly jumps back to the app you were just in.
             long now = android.os.SystemClock.uptimeMillis();
             if (lastApp != null && now - lastHomeAt < 700) {
                 lastHomeAt = 0;
+                swallowHomeUp = true;
                 if (overlay != null) {
                     closePanel();
                 }
@@ -272,6 +278,7 @@ public class KeyService extends AccessibilityService {
     private String curApp;
     private String lastApp;
     private long lastHomeAt;
+    private boolean swallowHomeUp;
 
     private void openApp(String pkg) {
         try {
