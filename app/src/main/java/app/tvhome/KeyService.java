@@ -33,7 +33,8 @@ public class KeyService extends AccessibilityService {
         }
         if (key == KeyEvent.KEYCODE_HOME && event.getAction() == KeyEvent.ACTION_DOWN
                 && event.getRepeatCount() == 0) {
-            // Pressing Home twice quickly jumps back to the app you were just in.
+            // Pressing Home twice quickly switches apps. From inside an app it goes to the app you
+            // used before this one; from the home screen it goes back to the app you came from.
             long now = android.os.SystemClock.uptimeMillis();
             if (lastApp != null && now - lastHomeAt < 700) {
                 lastHomeAt = 0;
@@ -45,7 +46,10 @@ public class KeyService extends AccessibilityService {
                 return true;
             }
             lastHomeAt = now;
-            if (curApp != null) {
+            boolean inApp = HomeActivity.visible == null && overlay == null;
+            if (inApp && prevApp != null && !prevApp.equals(curApp)) {
+                lastApp = prevApp;
+            } else {
                 lastApp = curApp;
             }
         }
@@ -277,6 +281,7 @@ public class KeyService extends AccessibilityService {
     /** The app on screen right now, and the one that was open when Home was last pressed. */
     private String curApp;
     private String lastApp;
+    private String prevApp;
     private long lastHomeAt;
     private boolean swallowHomeUp;
 
@@ -344,7 +349,8 @@ public class KeyService extends AccessibilityService {
             if (i == null) {
                 i = getPackageManager().getLaunchIntentForPackage(pkg);
             }
-            if (i != null) {
+            if (i != null && !pkg.equals(curApp)) {
+                prevApp = curApp;
                 curApp = pkg;
             }
         } catch (Exception ignored) {
