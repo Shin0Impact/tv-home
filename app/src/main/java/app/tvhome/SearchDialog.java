@@ -59,7 +59,7 @@ final class SearchDialog {
 
         // Every app on the home screen that can take a search (a standard search, Google's app
         // search action, or "play from search") gets its own row, so this list builds itself.
-        final Map<String, String> searchable = searchableApps(act, pkgs);
+        final Map<String, String[]> searchable = searchableApps(act, pkgs);
         final SharedPreferences usePrefs = act.getSharedPreferences("home", Activity.MODE_PRIVATE);
 
         // The field.
@@ -114,7 +114,7 @@ final class SearchDialog {
             for (int oi = 0; oi < order.size() && apps < 8; oi++) {
                 int i = order.get(oi);
                 final String pkg = pkgs.get(i);
-                final String action = searchable.get(pkg);
+                final String[] action = searchable.get(pkg);
                 if (action == null) {
                     continue;
                 }
@@ -205,16 +205,37 @@ final class SearchDialog {
             "com.google.android.gms.actions.SEARCH_ACTION",
             "android.media.action.MEDIA_PLAY_FROM_SEARCH"};
 
-    /** package -> the search action it understands, for the apps in {@code pkgs}. */
-    private static Map<String, String> searchableApps(Activity act, List<String> pkgs) {
-        Map<String, String> found = new HashMap<>();
+    /**
+     * Apps whose own search can take the typed words as a link (the same kind of link that makes
+     * "Search YouTube" work). %s is replaced by the words. Add a line to teach it another app.
+     */
+    private static final String[][] LINKS = {
+            {"org.smarttube.stable", "https://www.youtube.com/results?search_query=%s"},
+            {"com.teamsmart.videomanager.tv", "https://www.youtube.com/results?search_query=%s"},
+            {"com.google.android.youtube.tv", "https://www.youtube.com/results?search_query=%s"},
+            {"com.netflix.ninja", "https://www.netflix.com/search?q=%s"},
+            {"com.spotify.tv.android", "spotify:search:%s"},
+            {"com.stremio.one", "stremio:///search?search=%s"}};
+
+    /**
+     * package -> how to search in it, for the apps in {@code pkgs}: {"link", template} for the
+     * known links above, else {"act", action, activity} for an app that declares a search action.
+     */
+    private static Map<String, String[]> searchableApps(Activity act, List<String> pkgs) {
+        Map<String, String[]> found = new HashMap<>();
+        for (String[] l : LINKS) {
+            if (pkgs.contains(l[0])) {
+                found.put(l[0], new String[]{"link", l[1]});
+            }
+        }
         PackageManager pm = act.getPackageManager();
         for (String action : SEARCH_ACTIONS) {
             try {
                 for (ResolveInfo ri : pm.queryIntentActivities(new Intent(action), 0)) {
                     String pkg = ri.activityInfo.packageName;
-                    if (pkgs.contains(pkg) && !pkg.equals(act.getPackageName()) && !found.containsKey(pkg)) {
-                        found.put(pkg, action);
+                    if (pkgs.contains(pkg) && !pkg.equals(act.getPackageName())
+                            && ri.activityInfo.exported && !found.containsKey(pkg)) {
+                        found.put(pkg, new String[]{"act", action, ri.activityInfo.name});
                     }
                 }
             } catch (Exception ignored) {
@@ -267,13 +288,23 @@ final class SearchDialog {
         return out;
     }
 
-    private static void searchIn(Activity act, String pkg, String action, String query) {
-        Intent i = new Intent(action).setPackage(pkg).putExtra(SearchManager.QUERY, query)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        if (action.endsWith("MEDIA_PLAY_FROM_SEARCH")) {
-            i.putExtra("android.intent.extra.focus", "vnd.android.cursor.item/*");
-        }
+    private static void searchIn(Activity act, String pkg, String[] how, String query) {
         recordUse(act.getSharedPreferences("home", Activity.MODE_PRIVATE), pkg);
+        Intent i;
+        if ("link".equals(how[0])) {
+            String q = how[1].startsWith("spotify:") ? query : Uri.encode(query);
+            i = new Intent(Intent.ACTION_VIEW, Uri.parse(how[1].replace("%s", q))).setPackage(pkg);
+        } else {
+            // Started by its exact screen, so it does not matter how the app filed the action.
+            i = new Intent(how[1]).setClassName(pkg, how[2])
+                    .putExtra(SearchManager.QUERY, query)
+                    .putExtra("query", query);
+            if (how[1].endsWith("MEDIA_PLAY_FROM_SEARCH")) {
+                i.putExtra("android.intent.extra.focus", "vnd.android.cursor.item/*");
+                i.putExtra("android.intent.extra.title", query);
+            }
+        }
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         try {
             act.startActivity(i);
         } catch (Exception e) {

@@ -3,6 +3,7 @@ package app.tvhome;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
@@ -219,13 +220,18 @@ final class SettingsPanel {
         n.setText(name);
         n.setTextColor(th.text);
         n.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
-        row.addView(n, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        n.setSingleLine(true);
+        row.addView(n, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         final TextView v = new TextView(ctx);
         v.setText(value.isEmpty() ? "\u203A" : value + "  \u203A");
         v.setTextColor(th.dim);
         v.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         v.setSingleLine(true);
-        row.addView(v);
+        v.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        v.setGravity(Gravity.END);
+        LinearLayout.LayoutParams vlp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        vlp.leftMargin = dp(12);
+        row.addView(v, vlp);
         row.setOnFocusChangeListener((x, focused) -> {
             bg.setColor(focused ? th.focusBg : th.pill);
             n.setTextColor(focused ? th.focusText : th.text);
@@ -246,7 +252,8 @@ final class SettingsPanel {
         LinearLayout panel = new LinearLayout(ctx);
         panel.setOrientation(LinearLayout.HORIZONTAL);
         panel.setGravity(Gravity.CENTER_VERTICAL);
-        panel.setPadding(dp(40), dp(18), dp(40), dp(26));
+        panel.setPadding(dp(40), dp(12), dp(40), dp(14));
+        panel.setMinimumHeight(dp(96));
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(th.sheet);
         bg.setCornerRadii(new float[]{dp(32), dp(32), dp(32), dp(32), 0, 0, 0, 0});
@@ -263,7 +270,8 @@ final class SettingsPanel {
         final LinearLayout choices = new LinearLayout(ctx);
         choices.setOrientation(LinearLayout.HORIZONTAL);
         choices.setGravity(Gravity.CENTER_VERTICAL);
-        choices.setPadding(dp(8), dp(12), dp(8), dp(12));
+        choices.setPadding(dp(8), dp(6), dp(8), dp(6));
+        choices.setMinimumHeight(dp(64));
         choices.setClipChildren(false);
         choices.setClipToPadding(false);
         HorizontalScrollView hs = new HorizontalScrollView(ctx);
@@ -290,12 +298,11 @@ final class SettingsPanel {
         t.setSingleLine(true);
         if (current) {
             t.setTextColor(th.text);
-            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26);
+            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
             t.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-            t.setPadding(0, dp(2), 0, dp(2));
         } else {
             t.setTextColor(th.dim);
-            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         }
         return t;
     }
@@ -303,31 +310,36 @@ final class SettingsPanel {
     /** A choice in the bar: a rounded card with a label (and a small sample on top when given). */
     private View choice(String label, int sample, boolean selected, boolean light) {
         final LinearLayout card = new LinearLayout(ctx);
-        card.setOrientation(LinearLayout.VERTICAL);
+        card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER);
-        card.setPadding(dp(18), dp(14), dp(18), dp(14));
+        card.setPadding(dp(22), 0, dp(22), 0);
+        card.setMinimumHeight(dp(52)); // every choice is the same height, so every bar is
         card.setFocusable(true);
         card.setClickable(true);
         final GradientDrawable bg = new GradientDrawable();
         bg.setColor(th.pill);
-        bg.setCornerRadius(dp(22));
+        bg.setCornerRadius(dp(26));
+        // The current choice carries a frame.
+        bg.setStroke(dp(2), selected ? Theme.mix(th.pill, th.text, 0.75f) : Color.TRANSPARENT);
         card.setBackground(bg);
         if (sample != 0) {
-            View chip = new View(ctx);
+            View dot = new View(ctx);
             GradientDrawable cb = new GradientDrawable();
+            cb.setShape(GradientDrawable.OVAL);
             cb.setColor(sample);
-            cb.setCornerRadius(dp(14));
-            cb.setStroke(dp(1), 0x44888E9C);
-            chip.setBackground(cb);
-            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(dp(96), dp(52));
-            clp.bottomMargin = dp(10);
-            card.addView(chip, clp);
+            cb.setStroke(dp(1), 0x66888E9C);
+            dot.setBackground(cb);
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(dp(20), dp(20));
+            clp.rightMargin = dp(10);
+            card.addView(dot, clp);
         }
         final TextView t = new TextView(ctx);
-        t.setText((selected ? "\u2713  " : "") + label);
+        t.setText(label);
         t.setTextColor(th.text);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        t.setGravity(Gravity.CENTER);
+        t.setSingleLine(true);
+        t.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        t.setMaxWidth(dp(260));
         card.addView(t);
         card.setOnFocusChangeListener((v, focused) -> {
             bg.setColor(focused ? th.focusBg : th.pill);
@@ -380,8 +392,8 @@ final class SettingsPanel {
                         showBar(index, hi);
                     });
                     sw.setOnFocusChangeListener((v, f) -> v.invalidate());
-                    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(76), dp(76));
-                    lp.rightMargin = dp(6);
+                    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(60), dp(60));
+                    lp.rightMargin = dp(8);
                     row.addView(sw, lp);
                     items.add(sw);
                 }
@@ -404,7 +416,7 @@ final class SettingsPanel {
                 }
                 for (int i = 0; i < Wallpaper.SRC_IDS.length; i++) {
                     values.add("d:" + Wallpaper.SRC_IDS[i]);
-                    labels.add(Wallpaper.SRC_NAMES[i]);
+                    labels.add(Wallpaper.SRC_NAMES[i].replace(" picture of the day", ""));
                 }
                 for (int i = 0; i < values.size(); i++) {
                     final String value = values.get(i);
@@ -594,22 +606,17 @@ final class SettingsPanel {
                 cv.drawCircle(cx, cy, r, p);
             }
             if (selected) {
+                // The current colour carries a frame.
                 p.setStyle(Paint.Style.STROKE);
-                p.setStrokeWidth(dp(3));
-                p.setStrokeCap(Paint.Cap.ROUND);
-                p.setStrokeJoin(Paint.Join.ROUND);
-                p.setColor(index == 0 ? 0xFF888E9C : Theme.onColor(fill));
-                Path tick = new Path();
-                tick.moveTo(cx - r * 0.35f, cy + r * 0.02f);
-                tick.lineTo(cx - r * 0.08f, cy + r * 0.3f);
-                tick.lineTo(cx + r * 0.4f, cy - r * 0.28f);
-                cv.drawPath(tick, p);
+                p.setStrokeWidth(dp(2));
+                p.setColor(th.dim);
+                cv.drawCircle(cx, cy, r + dp(3), p);
             }
             if (isFocused()) {
                 p.setStyle(Paint.Style.STROKE);
                 p.setStrokeWidth(dp(3));
                 p.setColor(th.text);
-                cv.drawCircle(cx, cy, r + dp(4), p);
+                cv.drawCircle(cx, cy, r + dp(3), p);
             }
         }
     }

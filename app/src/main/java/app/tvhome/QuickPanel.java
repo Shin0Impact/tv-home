@@ -92,7 +92,7 @@ final class QuickPanel {
 
         final Object[][] orbs = {
                 {"Wi-Fi", "", Icons.WIFI, Settings.ACTION_WIFI_SETTINGS, false},
-                {"Bluetooth", "", Icons.BLUETOOTH, Settings.ACTION_BLUETOOTH_SETTINGS, false},
+                {"Bluetooth", "", Icons.BLUETOOTH, "app.tvhome.BLUETOOTH", false},
                 {"Sound", "", Icons.SOUND, Settings.ACTION_SOUND_SETTINGS, false},
                 {"Display", "", Icons.DISPLAY, Settings.ACTION_DISPLAY_SETTINGS, false},
                 {"Source", "", Icons.INPUT, "app.tvhome.SOURCE", false},
@@ -234,9 +234,41 @@ final class QuickPanel {
         sourceBox.getChildAt(0).requestFocus();
     }
 
+    /** Bluetooth lives in different places on different TVs: try each until one opens. */
+    private boolean openBluetooth() {
+        Intent[] tries = {
+                new Intent(Settings.ACTION_BLUETOOTH_SETTINGS),
+                new Intent("android.settings.BLUETOOTH_SETTINGS"),
+                new Intent().setClassName("com.android.tv.settings",
+                        "com.android.tv.settings.accessories.AddAccessoryActivity"),
+                new Intent().setClassName("com.android.tv.settings",
+                        "com.android.tv.settings.accessories.BluetoothAccessoryActivity"),
+                new Intent("android.bluetooth.devicepicker.action.LAUNCH"),
+                new Intent(Settings.ACTION_SETTINGS)};
+        for (int i = 0; i < tries.length; i++) {
+            try {
+                ctx.startActivity(tries[i].addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                if (i == tries.length - 1) {
+                    Toast.makeText(ctx, "Bluetooth is under Remotes & accessories", Toast.LENGTH_LONG).show();
+                }
+                return true;
+            } catch (Exception ignored) {
+                // try the next place
+            }
+        }
+        return false;
+    }
+
     private void openAction(String action) {
         if ("app.tvhome.SOURCE".equals(action)) {
             toggleSources();
+            return;
+        }
+        if ("app.tvhome.BLUETOOTH".equals(action)) {
+            if (!openBluetooth()) {
+                Toast.makeText(ctx, "Can't open that", Toast.LENGTH_SHORT).show();
+            }
+            close.run();
             return;
         }
         try {

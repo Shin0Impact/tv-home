@@ -75,7 +75,7 @@ final class Wallpaper {
     }
 
     private static String today() {
-        return new SimpleDateFormat("yyyyMMdd", Locale.US).format(new Date());
+        return new SimpleDateFormat("yyyyMMdd", Locale.US).format(new Date()) + "v2"; // v2: forget pictures saved by older versions
     }
 
     private static File dir(Context ctx) {
@@ -142,20 +142,19 @@ final class Wallpaper {
                 }
                 // The free demo key is often used up, and some days the picture is a video: use a
                 // picture from NASA's image library instead (a different one each day).
-                String[] topics = {"nebula", "galaxy", "earth from space", "hubble", "mars", "aurora", "webb", "saturn"};
-                int day = (int) (System.currentTimeMillis() / 86400000L);
-                String lib = Net.text("https://images-api.nasa.gov/search?media_type=image&q="
-                        + java.net.URLEncoder.encode(topics[day % topics.length], "UTF-8"));
-                if (lib == null) {
+                // Otherwise: the latest picture of the whole Earth from NASA's DSCOVR satellite.
+                String epic = Net.text("https://epic.gsfc.nasa.gov/api/natural");
+                if (epic == null) {
                     return null;
                 }
-                org.json.JSONArray items = new JSONObject(lib).getJSONObject("collection").getJSONArray("items");
-                if (items.length() == 0) {
+                org.json.JSONArray arr = new org.json.JSONArray(epic);
+                if (arr.length() == 0) {
                     return null;
                 }
-                String href = items.getJSONObject(day % items.length()).getJSONArray("links")
-                        .getJSONObject(0).getString("href");
-                return href.replace("~thumb", "~large");
+                JSONObject e = arr.getJSONObject(arr.length() / 2);
+                String[] ymd = e.getString("date").substring(0, 10).split("-");
+                return "https://epic.gsfc.nasa.gov/archive/natural/" + ymd[0] + "/" + ymd[1] + "/" + ymd[2]
+                        + "/jpg/" + e.getString("image") + ".jpg";
             }
             if ("wiki".equals(src)) {
                 String d = new SimpleDateFormat("yyyy/MM/dd", Locale.US).format(new Date());
