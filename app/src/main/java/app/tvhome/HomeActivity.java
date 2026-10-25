@@ -95,7 +95,7 @@ import java.util.concurrent.Executors;
 public class HomeActivity extends Activity {
 
     private static final int TOP_ROW = 5;
-    private static final int GRID_COLS = 7;
+    private static final int GRID_COLS = 5;
     private static final int ROTATE_MS = 7000;
     private static final String STORE_PKG = "com.android.vending";
     private static final long STORE_REFRESH_MS = 12L * 3600 * 1000;
@@ -284,7 +284,7 @@ public class HomeActivity extends Activity {
         gap = dp(16);
         int avail = screenW - 2 * pad;
         topW = (avail - 2 * dp(20) - (TOP_ROW - 1) * gap) / TOP_ROW;
-        gridW = (avail - (GRID_COLS - 1) * gap) / GRID_COLS;
+        gridW = topW; // the same five columns as the first row, so Up/Down stays in its column
         cardW = dp(420);
         cardH = cardW * 9 / 16;
         heroH = cardH;
@@ -394,6 +394,56 @@ public class HomeActivity extends Activity {
         goTop();
     }
 
+    /** True while Up/Down is held: scrolling then uses a short animation so it keeps up. */
+    private boolean fastKeys;
+
+    /**
+     * Up/Down between apps keeps the column (five columns everywhere), and Down from the cards
+     * goes back to the app you came up from, instead of whichever one is geometrically nearest.
+     */
+    private boolean moveFocusInColumns(int key) {
+        if (moveApp != null || shownApps.isEmpty()) {
+            return false;
+        }
+        if (heroRoot != null && heroRoot.hasFocus()) {
+            if (key == KeyEvent.KEYCODE_DPAD_DOWN) {
+                View back = lastFocusPkg != null ? tiles.get(lastFocusPkg) : null;
+                if (back == null) {
+                    back = firstCell;
+                }
+                if (back != null && back.requestFocus()) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        View f = getCurrentFocus();
+        int i = -1;
+        for (int k = 0; k < shownApps.size(); k++) {
+            if (tiles.get(shownApps.get(k).pkg) == f) {
+                i = k;
+                break;
+            }
+        }
+        if (i < 0) {
+            return false;
+        }
+        int n = shownApps.size();
+        int target = key == KeyEvent.KEYCODE_DPAD_UP ? i - TOP_ROW : i + TOP_ROW;
+        if (target < 0) {
+            return false; // above the first row: the normal search finds the cards
+        }
+        if (target >= n) {
+            int lastRowStart = ((n - 1) / TOP_ROW) * TOP_ROW;
+            if (i >= lastRowStart) {
+                return true; // already on the last row
+            }
+            target = n - 1; // the last row is short: take its last app
+        }
+        View v = tiles.get(shownApps.get(target).pkg);
+        return v != null && v.requestFocus();
+    }
+
     /** Home pressed while already on the home screen: back to the top of the page. */
     void goTop() {
         dismissDialog();
@@ -441,6 +491,16 @@ public class HomeActivity extends Activity {
                     }
                 }
                 return true;
+            }
+        }
+        if (key == KeyEvent.KEYCODE_DPAD_UP || key == KeyEvent.KEYCODE_DPAD_DOWN) {
+            if (e.getAction() == KeyEvent.ACTION_UP) {
+                fastKeys = false;
+            } else if (e.getAction() == KeyEvent.ACTION_DOWN) {
+                fastKeys = e.getRepeatCount() > 0;
+                if (moveFocusInColumns(key)) {
+                    return true;
+                }
             }
         }
         if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
@@ -885,8 +945,8 @@ public class HomeActivity extends Activity {
             visible = false;
         }
         // Side cards are dimmed with a dark tint, not by fading them: fading makes them look washed out on a light background.
-        float al = visible ? 1f : 0f;
-        int dim = a == 0 ? Color.TRANSPARENT : 0x59000000;
+        float al = visible ? (a == 0 ? 1f : 0.9f) : 0f;
+        int dim = a == 0 ? Color.TRANSPARENT : 0x33000000;
         s.art.setColorFilter(dim);
         s.side.setColorFilter(dim);
         if (animate) {
@@ -1740,7 +1800,7 @@ public class HomeActivity extends Activity {
             old.cancel();
         }
         ObjectAnimator anim = ObjectAnimator.ofInt(scroller, property, to);
-        anim.setDuration(190);
+        anim.setDuration(fastKeys ? 70 : 190);
         anim.setInterpolator(new DecelerateInterpolator());
         scrollAnims.put(scroller, anim);
         anim.start();
@@ -1944,6 +2004,7 @@ public class HomeActivity extends Activity {
             for (int i = topCount; i < apps.size(); i++) {
                 if ((i - topCount) % GRID_COLS == 0) {
                     row = newRow();
+                    row.setPadding(dp(20), 0, dp(20), 0); // lines the columns up with the first row's panel
                     LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
                     rowLp.bottomMargin = dp(18);
@@ -2241,8 +2302,14 @@ public class HomeActivity extends Activity {
         }
         refresh(true);
         if (oldRoot != null) {
-            oldRoot.animate().alpha(0f).setDuration(350)
-                    .withEndAction(() -> content.removeView(oldRoot)).start();
+            // Fade it as one flat layer on the graphics chip, so the fade stays smooth on this weak TV.
+            oldRoot.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+            oldRoot.animate().alpha(0f).setDuration(300)
+                    .setInterpolator(new android.view.animation.LinearInterpolator())
+                    .withEndAction(() -> {
+                        oldRoot.setLayerType(View.LAYER_TYPE_NONE, null);
+                        content.removeView(oldRoot);
+                    }).start();
         }
     }
 
