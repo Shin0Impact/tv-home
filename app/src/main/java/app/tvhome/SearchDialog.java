@@ -47,7 +47,7 @@ final class SearchDialog {
     static Dialog show(final Activity act, final Theme th, final List<String> labels,
                        final List<String> pkgs, final Launcher launcher) {
         final float density = act.getResources().getDisplayMetrics().density;
-        final Dialog d = new Dialog(act, android.R.style.Theme_Material_NoActionBar);
+        final Dialog d = new Dialog(act, android.R.style.Theme_Translucent_NoTitleBar);
 
         LinearLayout box = new LinearLayout(act);
         box.setOrientation(LinearLayout.VERTICAL);

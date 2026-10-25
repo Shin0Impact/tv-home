@@ -41,6 +41,7 @@ final class QuickPanel {
     private LinearLayout notesBox;
     private TextView clearBtn;
     private LinearLayout sourceBox;
+    private View firstTile;
 
     QuickPanel(Context ctx, Runnable close, Runnable openSettings) {
         this.ctx = ctx;
@@ -89,17 +90,13 @@ final class QuickPanel {
         // Room above the first row so a focused (enlarged) circle is never cut off.
         content.setPadding(0, 0, 0, dp(4));
 
-        boolean online = isOnline();
         final Object[][] orbs = {
-                {"Wi-Fi", "", Icons.WIFI, Settings.ACTION_WIFI_SETTINGS, online},
+                {"Wi-Fi", "", Icons.WIFI, Settings.ACTION_WIFI_SETTINGS, false},
                 {"Bluetooth", "", Icons.BLUETOOTH, Settings.ACTION_BLUETOOTH_SETTINGS, false},
                 {"Sound", "", Icons.SOUND, Settings.ACTION_SOUND_SETTINGS, false},
                 {"Display", "", Icons.DISPLAY, Settings.ACTION_DISPLAY_SETTINGS, false},
                 {"Source", "", Icons.INPUT, "app.tvhome.SOURCE", false},
-                {"Keyboard", "", Icons.KEYBOARD, Settings.ACTION_INPUT_METHOD_SETTINGS, false},
                 {"Screen saver", "", Icons.MOON, "app.tvhome.SCREENSAVER", false},
-                {"Date & time", "", Icons.CLOCK, Settings.ACTION_DATE_SETTINGS, false},
-                {"Accounts", "", Icons.PERSON, Settings.ACTION_SYNC_SETTINGS, false},
                 {"All settings", "", Icons.GEAR, Settings.ACTION_SETTINGS, false},
                 {"TV Home", "", Icons.SLIDERS, "app.tvhome.OPEN_SETTINGS", false}};
         final int perRow = 2;
@@ -118,9 +115,12 @@ final class QuickPanel {
             View cell = tile((String) o[0], statusFor((String) o[0]), (Integer) o[2], (Boolean) o[4]);
             final String action = (String) o[3];
             cell.setOnClickListener(v -> openAction(action));
+            if (i == 0) {
+                firstTile = cell;
+            }
             LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0, dp(54), 1f);
-            clp.leftMargin = dp(i % perRow == 0 ? 0 : 5);
-            clp.rightMargin = dp(i % perRow == 0 ? 5 : 0);
+            clp.leftMargin = dp(i % perRow == 0 ? 0 : 4);
+            clp.rightMargin = dp(i % perRow == 0 ? 4 : 0);
             row.addView(cell, clp);
         }
 
@@ -194,6 +194,12 @@ final class QuickPanel {
         frame.setClipChildren(false);
         frame.addView(panel, new android.widget.FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        // Start with the first tile selected, so one press of OK / arrows works straight away.
+        frame.post(() -> {
+            if (firstTile != null) {
+                firstTile.requestFocus();
+            }
+        });
         return frame;
     }
 
@@ -412,7 +418,7 @@ final class QuickPanel {
         cell.setGravity(Gravity.CENTER_VERTICAL);
         cell.setFocusable(true);
         cell.setClickable(true);
-        cell.setPadding(dp(14), 0, dp(10), 0);
+        cell.setPadding(dp(12), 0, dp(8), 0);
         final GradientDrawable bg = new GradientDrawable();
         bg.setCornerRadius(dp(18));
         final int base = th.light ? 0x14000000 : 0x24FFFFFF;
@@ -436,8 +442,8 @@ final class QuickPanel {
                 Icons.draw(cv, icon, w / 2, h / 2, r * 2f * 0.85f, ink, fill);
             }
         };
-        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(34), dp(34));
-        dlp.rightMargin = dp(10);
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(30), dp(30));
+        dlp.rightMargin = dp(9);
         cell.addView(disc, dlp);
 
         LinearLayout col = new LinearLayout(ctx);
@@ -445,7 +451,7 @@ final class QuickPanel {
         final TextView name = new TextView(ctx);
         name.setText(label);
         name.setTextColor(th.text);
-        name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         name.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.END);

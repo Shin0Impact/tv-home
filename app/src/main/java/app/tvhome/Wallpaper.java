@@ -134,11 +134,28 @@ final class Wallpaper {
             }
             if ("nasa".equals(src)) {
                 String json = Net.text("https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY");
-                if (json == null) {
+                if (json != null) {
+                    JSONObject o = new JSONObject(json);
+                    if ("image".equals(o.optString("media_type")) && o.optString("url", "").startsWith("http")) {
+                        return o.optString("url");
+                    }
+                }
+                // The free demo key is often used up, and some days the picture is a video: use a
+                // picture from NASA's image library instead (a different one each day).
+                String[] topics = {"nebula", "galaxy", "earth from space", "hubble", "mars", "aurora", "webb", "saturn"};
+                int day = (int) (System.currentTimeMillis() / 86400000L);
+                String lib = Net.text("https://images-api.nasa.gov/search?media_type=image&q="
+                        + java.net.URLEncoder.encode(topics[day % topics.length], "UTF-8"));
+                if (lib == null) {
                     return null;
                 }
-                JSONObject o = new JSONObject(json);
-                return "image".equals(o.optString("media_type")) ? o.optString("url", null) : null;
+                org.json.JSONArray items = new JSONObject(lib).getJSONObject("collection").getJSONArray("items");
+                if (items.length() == 0) {
+                    return null;
+                }
+                String href = items.getJSONObject(day % items.length()).getJSONArray("links")
+                        .getJSONObject(0).getString("href");
+                return href.replace("~thumb", "~large");
             }
             if ("wiki".equals(src)) {
                 String d = new SimpleDateFormat("yyyy/MM/dd", Locale.US).format(new Date());

@@ -159,10 +159,10 @@ final class SettingsPanel {
 
         LinearLayout panel = new LinearLayout(ctx);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(24), dp(28), dp(24), dp(20));
+        panel.setPadding(dp(18), dp(22), dp(18), dp(16));
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(th.sheet);
-        bg.setCornerRadii(new float[]{dp(28), dp(28), 0, 0, 0, 0, dp(28), dp(28)});
+        bg.setCornerRadius(dp(26));
         panel.setBackground(bg);
 
         TextView title = new TextView(ctx);
@@ -195,8 +195,11 @@ final class SettingsPanel {
         panel.addView(done, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        host.addView(panel, new FrameLayout.LayoutParams(dp(400), ViewGroup.LayoutParams.MATCH_PARENT,
-                Gravity.END));
+        // Same size and place as the quick menu card.
+        FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(dp(332),
+                ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END);
+        plp.setMargins(0, dp(14), dp(14), dp(14));
+        host.addView(panel, plp);
         final View target = rows.get(Math.max(0, Math.min(focusIndex, rows.size() - 1)));
         target.post(target::requestFocus);
     }
@@ -426,12 +429,10 @@ final class SettingsPanel {
             }
             case 3: {
                 final boolean fahr = Weather.fahrenheit(prefs);
-                if (askCity != null) {
-                    String city = Weather.city(prefs);
-                    View c = choice("City \u00B7 " + (city.isEmpty() ? "Not set" : city), 0, false, false);
-                    c.setOnClickListener(v -> askCity.run());
-                    addChoice(row, items, c);
-                }
+                final String city = Weather.city(prefs);
+                final View cityChoice = choice("City \u00B7 " + (city.isEmpty() ? "Not set" : city), 0, false, false);
+                cityChoice.setOnClickListener(v -> editCity(row, items));
+                addChoice(row, items, cityChoice);
                 for (int i = 0; i < 2; i++) {
                     final boolean f = i == 1;
                     boolean on = fahr == f;
@@ -483,6 +484,51 @@ final class SettingsPanel {
             }
         }
         return selected;
+    }
+
+    /** Turns the bar into a small text field for the weather city. */
+    private void editCity(final LinearLayout row, final List<View> items) {
+        row.removeAllViews();
+        items.clear();
+        final android.widget.EditText box = new android.widget.EditText(ctx);
+        box.setSingleLine(true);
+        box.setText(Weather.city(prefs));
+        box.setHint("City, for example Haifa");
+        box.setHintTextColor(th.dim);
+        box.setTextColor(th.text);
+        box.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        box.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
+        box.setPadding(dp(22), 0, dp(22), 0);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(th.pill);
+        bg.setCornerRadius(dp(22));
+        bg.setStroke(dp(2), th.ring);
+        box.setBackground(bg);
+        row.addView(box, new LinearLayout.LayoutParams(dp(360), dp(56)));
+        final Runnable save = () -> {
+            prefs.edit().putString("city", box.getText().toString().trim())
+                    .remove("wx_at").remove("wx_for").apply();
+            looked();
+            showBar(3, 0);
+        };
+        View ok = choice("Save", 0, false, false);
+        ok.setOnClickListener(v -> save.run());
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.leftMargin = dp(14);
+        row.addView(ok, lp);
+        box.setOnEditorActionListener((v, action, ev) -> {
+            save.run();
+            return true;
+        });
+        box.requestFocus();
+        box.post(() -> {
+            android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager)
+                    ctx.getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.showSoftInput(box, 0);
+            }
+        });
     }
 
     private TextView pill(String text) {

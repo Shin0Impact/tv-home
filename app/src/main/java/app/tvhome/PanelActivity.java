@@ -23,7 +23,7 @@ public class PanelActivity extends Activity {
         setContentView(new QuickPanel(this, this::finish, null).build());
         Window window = getWindow();
         window.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        window.setLayout((int) (330 * density + 0.5f), ViewGroup.LayoutParams.MATCH_PARENT);
+        window.setLayout((int) (360 * density + 0.5f), ViewGroup.LayoutParams.MATCH_PARENT);
         window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
         window.setDimAmount(0.5f);
     }

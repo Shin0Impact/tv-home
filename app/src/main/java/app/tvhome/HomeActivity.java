@@ -2620,7 +2620,7 @@ public class HomeActivity extends Activity {
     /** TV Home's own settings, shown in a side dialog (the same view the quick settings can draw over an app). */
     private void showHomeSettings(final int focusRow) {
         dismissDialog();
-        final Dialog d = new Dialog(this, android.R.style.Theme_Material_NoActionBar);
+        final Dialog d = new Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
         final SettingsPanel sp = new SettingsPanel(this, d::dismiss, this::applyTheme, () -> {
             stageApp = null;
             focusedApp = null;

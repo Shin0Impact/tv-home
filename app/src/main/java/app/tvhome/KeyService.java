@@ -115,7 +115,7 @@ public class KeyService extends AccessibilityService {
                 box.requestFocus();
             }).build();
             FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(
-                    (int) (330 * density + 0.5f), ViewGroup.LayoutParams.MATCH_PARENT,
+                    (int) (360 * density + 0.5f), ViewGroup.LayoutParams.MATCH_PARENT,
                     Gravity.END);
             holder.addView(panel, plp);
             WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
