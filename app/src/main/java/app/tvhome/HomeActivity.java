@@ -813,29 +813,6 @@ public class HomeActivity extends Activity {
         return lp;
     }
 
-    private TextView pill(String text) {
-        final TextView t = new TextView(this);
-        t.setText(text);
-        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        t.setTextColor(th.text);
-        t.setPadding(dp(22), dp(10), dp(22), dp(10));
-        t.setFocusable(true);
-        t.setClickable(true);
-        final GradientDrawable bg = new GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM, Theme.grad(th.pill));
-        bg.setCornerRadius(dp(24));
-        t.setBackground(bg);
-        t.setOnFocusChangeListener((v, focused) -> {
-            if (focused) {
-                bg.setColors(new int[]{th.focusBg, th.focusBg});
-            } else {
-                bg.setColors(Theme.grad(th.pill));
-            }
-            t.setTextColor(focused ? th.focusText : th.text);
-        });
-        return t;
-    }
-
     private LinearLayout newRow() {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -2139,58 +2116,6 @@ public class HomeActivity extends Activity {
 
     private void saveListPref(String key, List<String> list) {
         prefs.edit().putString(key, TextUtils.join(",", list)).apply();
-    }
-
-    private void addWatchedShelf(List<App> apps) {
-        List<JSONObject> hist = recentHistory(14);
-        if (hist.isEmpty()) {
-            return;
-        }
-        Map<String, App> byPkg = new HashMap<>();
-        for (App a : apps) {
-            byPkg.put(a.pkg, a);
-        }
-        HScroll hs = new HScroll(this);
-        hs.setHorizontalScrollBarEnabled(false);
-        hs.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        hs.setClipChildren(false);
-        hs.setClipToPadding(false);
-        hs.setPadding(0, dp(10), 0, dp(10));
-        LinearLayout rowView = newRow();
-        int shown = 0;
-        for (JSONObject o : hist) {
-            final App src = byPkg.get(o.optString("pkg"));
-            if (src == null || !canOpen(o)) {
-                continue; // hidden/uninstalled app, or nothing that opens a specific video
-            }
-            final Intent open = intentFor(o, src);
-            View cell = makeTile(topW, o.optString("title"), null,
-                    src.banner != null ? src.banner : src.icon, false);
-            String art = o.optString("art");
-            if (!art.isEmpty()) {
-                FrameLayout card = (FrameLayout) ((LinearLayout) cell).getChildAt(0);
-                ImageView img = (ImageView) card.getChildAt(0);
-                img.setLayoutParams(new FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-                img.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                img.setImageDrawable(null);
-                loadImage(art, img);
-            }
-            cell.setOnClickListener(v -> safeStart(open));
-            rowView.addView(cell, cellParams(topW));
-            shown++;
-        }
-        if (shown == 0) {
-            return;
-        }
-        grid.addView(sectionTitle("Recently watched"), new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        hs.addView(rowView, new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.bottomMargin = dp(8);
-        grid.addView(hs, lp);
     }
 
     private void render(List<App> apps) {

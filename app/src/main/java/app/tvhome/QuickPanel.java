@@ -161,32 +161,6 @@ final class QuickPanel {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         fillNotes();
 
-        // What the apps report to the hero cards; only here while the carousel is being tuned.
-        TextView diag = new TextView(ctx);
-        StringBuilder info = new StringBuilder(sp.getString("epgdebug", "Apps' rows: not read yet"));
-        if (sp.contains("storedebug")) {
-            info.append("\n").append(sp.getString("storedebug", ""));
-        }
-        for (java.util.Map.Entry<String, ?> e : sp.getAll().entrySet()) {
-            if (e.getKey().startsWith("mddebug_") && e.getValue() instanceof String) {
-                info.append("\n\n").append((String) e.getValue());
-            }
-        }
-        diag.setText(info.toString());
-        diag.setTextColor(th.dim);
-        diag.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-        diag.setPadding(dp(4), dp(8), 0, 0);
-        diag.setVisibility(View.GONE);
-        final TextView diagBtn = pill("Diagnostics");
-        diagBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        diagBtn.setOnClickListener(v -> diag.setVisibility(
-                diag.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE));
-        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        dlp.topMargin = dp(16);
-        content.addView(diagBtn, dlp);
-        content.addView(diag);
-
         sv.addView(content);
         panel.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
