@@ -576,43 +576,9 @@ public class HomeActivity extends Activity {
         header.setPadding(0, dp(24), 0, dp(4));
         headerView = header;
 
-        SearchBar searchBar = new SearchBar(this);
-        searchBar.setOnClickListener(v -> showSearch(false));
-        LinearLayout.LayoutParams sbLp = new LinearLayout.LayoutParams(dp(330), dp(44));
-        header.addView(searchBar, sbLp);
-        IconButton mic = new IconButton(this, Icons.MIC);
-        mic.setOnClickListener(v -> showSearch(true));
-        LinearLayout.LayoutParams micLp = iconParams();
-        micLp.leftMargin = dp(8);
-        header.addView(mic, micLp);
-
-        unhideBtn = pill("Show hidden");
-        unhideBtn.setVisibility(View.GONE);
-        unhideBtn.setOnClickListener(v -> {
-            prefs.edit().remove("hidden").apply();
-            refresh(true);
-        });
-        header.addView(unhideBtn, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        View spacer = new View(this);
-        header.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
-
-        weatherView = new TextView(this);
-        weatherView.setTextColor(th.dim);
-        weatherView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-        weatherView.setSingleLine(true);
-        String wx = Weather.cached(prefs);
-        weatherView.setText(wx);
-        weatherView.setVisibility(wx.isEmpty() ? View.GONE : View.VISIBLE);
-        LinearLayout.LayoutParams wxLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        wxLp.rightMargin = dp(22);
-        header.addView(weatherView, wxLp);
-
         LinearLayout clockCol = new LinearLayout(this);
         clockCol.setOrientation(LinearLayout.VERTICAL);
-        clockCol.setGravity(Gravity.END);
+        clockCol.setGravity(Gravity.START);
         TextClock time = new TextClock(this);
         time.setFormat12Hour("h:mm");
         time.setFormat24Hour("HH:mm");
@@ -630,8 +596,42 @@ public class HomeActivity extends Activity {
         clockCol.addView(date);
         LinearLayout.LayoutParams timeLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        timeLp.rightMargin = dp(18);
+        timeLp.rightMargin = dp(24);
         header.addView(clockCol, timeLp);
+
+        IconButton mic = new IconButton(this, Icons.MIC);
+        mic.setOnClickListener(v -> showSearch(true));
+        LinearLayout.LayoutParams micLp = iconParams();
+        micLp.leftMargin = 0;
+        micLp.rightMargin = dp(10);
+        header.addView(mic, micLp);
+
+        SearchBar searchBar = new SearchBar(this);
+        searchBar.setOnClickListener(v -> showSearch(false));
+        LinearLayout.LayoutParams sbLp = new LinearLayout.LayoutParams(0, dp(44), 1f);
+        sbLp.rightMargin = dp(22);
+        header.addView(searchBar, sbLp);
+
+        unhideBtn = pill("Show hidden");
+        unhideBtn.setVisibility(View.GONE);
+        unhideBtn.setOnClickListener(v -> {
+            prefs.edit().remove("hidden").apply();
+            refresh(true);
+        });
+        header.addView(unhideBtn, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        weatherView = new TextView(this);
+        weatherView.setTextColor(th.dim);
+        weatherView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        weatherView.setSingleLine(true);
+        String wx = Weather.cached(prefs);
+        weatherView.setText(wx);
+        weatherView.setVisibility(wx.isEmpty() ? View.GONE : View.VISIBLE);
+        LinearLayout.LayoutParams wxLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        wxLp.rightMargin = dp(22);
+        header.addView(weatherView, wxLp);
 
         IconButton wifi = new IconButton(this, IconButton.WIFI);
         wifi.setOnClickListener(v -> safeStart(new Intent(Settings.ACTION_WIFI_SETTINGS)));
@@ -701,7 +701,7 @@ public class HomeActivity extends Activity {
             p.setColor(f ? th.focusBg : th.pill);
             cv.drawRoundRect(0, 0, w, h, h / 2, h / 2, p);
             int ink = f ? th.focusText : th.text;
-            Icons.draw(cv, Icons.SEARCH, dp(26), h / 2, dp(26), ink, f ? th.focusBg : th.pill);
+            Icons.draw(cv, Icons.SEARCH, dp(26), h / 2, dp(36), ink, f ? th.focusBg : th.pill);
             p.setColor(f ? th.focusText : th.dim);
             p.setTextSize(dp(15));
             p.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
