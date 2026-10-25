@@ -1,7 +1,5 @@
 package app.tvhome;
 
-import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.media.tv.TvContract;
@@ -12,50 +10,39 @@ import android.widget.Toast;
 import java.util.ArrayList;
 import java.util.List;
 
-/** The TV's inputs (HDMI 1, 2, 3, ...), listed in a small dialog; choosing one switches to it. */
+/** The TV's physical inputs (HDMI 1, 2, 3, ...), for the Source list in the quick settings. */
 final class Inputs {
 
     private Inputs() {
     }
 
-    /** Shows the list and returns the dialog (so the caller can close it), or null if there are none. */
-    static AlertDialog show(final Activity act) {
-        final List<String> ids = new ArrayList<>();
-        final List<String> names = new ArrayList<>();
+    /** Fills ids and names with the physical inputs. Works from any context (also the overlay). */
+    static void list(Context ctx, List<String> ids, List<String> names) {
         try {
-            TvInputManager tv = (TvInputManager) act.getSystemService(Context.TV_INPUT_SERVICE);
-            for (TvInputInfo info : tv.getTvInputList()) {
+            TvInputManager tv = (TvInputManager) ctx.getSystemService(Context.TV_INPUT_SERVICE);
+            for (TvInputInfo info : new ArrayList<>(tv.getTvInputList())) {
                 if (!info.isPassthroughInput()) {
                     continue; // only the physical inputs, not the tuner or app channels
                 }
-                CharSequence label = info.loadCustomLabel(act);
+                CharSequence label = info.loadCustomLabel(ctx);
                 if (label == null || label.length() == 0) {
-                    label = info.loadLabel(act);
+                    label = info.loadLabel(ctx);
                 }
                 ids.add(info.getId());
                 names.add(label == null ? info.getId() : label.toString());
             }
         } catch (Exception ignored) {
-            // fall through to the message below
+            // leave the lists as they are
         }
-        if (names.isEmpty()) {
-            Toast.makeText(act, "No inputs found", Toast.LENGTH_SHORT).show();
-            return null;
+    }
+
+    static void switchTo(Context ctx, String id) {
+        try {
+            ctx.startActivity(new Intent(Intent.ACTION_VIEW,
+                    TvContract.buildChannelUriForPassthroughInput(id))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (Exception e) {
+            Toast.makeText(ctx, "Can't switch to that input", Toast.LENGTH_SHORT).show();
         }
-        AlertDialog d = new AlertDialog.Builder(act, android.R.style.Theme_Material_Dialog_Alert)
-                .setTitle("Inputs")
-                .setItems(names.toArray(new String[0]), (dialog, which) -> {
-                    try {
-                        Intent go = new Intent(Intent.ACTION_VIEW,
-                                TvContract.buildChannelUriForPassthroughInput(ids.get(which)));
-                        go.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        act.startActivity(go);
-                    } catch (Exception e) {
-                        Toast.makeText(act, "Can't switch to that input", Toast.LENGTH_SHORT).show();
-                    }
-                })
-                .create();
-        d.show();
-        return d;
     }
 }

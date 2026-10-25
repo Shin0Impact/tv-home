@@ -1,26 +1,32 @@
 package app.tvhome;
 
 import android.app.Activity;
-import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Intent;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
-import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.ListView;
+import android.widget.TextView;
 import android.widget.Toast;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Search from the home screen: "Voice search" first, then a typed box that finds your apps and
- * offers to search YouTube or the web for the same words.
+ * Search from the home screen, in the look of the search bar on top: a long rounded field with the
+ * results listed under it as rounded rows (your apps, then YouTube and the web). The microphone
+ * button on the home screen starts voice search directly.
  */
 final class SearchDialog {
 
@@ -31,66 +37,66 @@ final class SearchDialog {
     private SearchDialog() {
     }
 
-    static AlertDialog show(final Activity act, final List<String> labels, final List<String> pkgs,
-                            final Launcher launcher) {
+    static Dialog show(final Activity act, final Theme th, final List<String> labels,
+                       final List<String> pkgs, final Launcher launcher) {
         final float density = act.getResources().getDisplayMetrics().density;
+        final Dialog d = new Dialog(act, android.R.style.Theme_Material_NoActionBar);
+
         LinearLayout box = new LinearLayout(act);
         box.setOrientation(LinearLayout.VERTICAL);
-        int p = (int) (20 * density);
-        box.setPadding(p, p / 2, p, 0);
+        box.setPadding(dp(density, 40), dp(density, 28), dp(density, 40), 0);
 
+        // The field.
         final EditText input = new EditText(act);
-        input.setHint("Type to search apps, YouTube or the web");
+        input.setHint("Search apps, YouTube and the web");
+        input.setHintTextColor(th.dim);
+        input.setTextColor(th.text);
+        input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         input.setSingleLine(true);
         input.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
-        box.addView(input, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        input.setPadding(dp(density, 24), 0, dp(density, 24), 0);
+        GradientDrawable fieldBg = new GradientDrawable();
+        fieldBg.setColor(th.pill);
+        fieldBg.setCornerRadius(dp(density, 28));
+        fieldBg.setStroke(dp(density, 2), th.ring);
+        input.setBackground(fieldBg);
+        box.addView(input, new LinearLayout.LayoutParams(dp(density, 520), dp(density, 52)));
 
-        final List<String> rows = new ArrayList<>();
-        final List<Runnable> actions = new ArrayList<>();
-        final ArrayAdapter<String> adapter = new ArrayAdapter<>(act,
-                android.R.layout.simple_list_item_1, rows);
-        ListView list = new ListView(act);
-        list.setAdapter(adapter);
-        box.addView(list, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, (int) (300 * density)));
+        final LinearLayout results = new LinearLayout(act);
+        results.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(dp(density, 520),
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        rlp.topMargin = dp(density, 14);
+        box.addView(results, rlp);
 
-        final AlertDialog[] self = new AlertDialog[1];
         final Runnable[] rebuild = new Runnable[1];
         rebuild[0] = () -> {
             String q = input.getText().toString().trim();
-            rows.clear();
-            actions.clear();
-            rows.add("Voice search");
-            actions.add(() -> {
-                voice(act);
-                self[0].dismiss();
-            });
-            if (!q.isEmpty()) {
-                String low = q.toLowerCase();
-                for (int i = 0; i < labels.size() && rows.size() < 7; i++) {
-                    if (labels.get(i).toLowerCase().contains(low)) {
-                        final String pkg = pkgs.get(i);
-                        rows.add("Open  " + labels.get(i));
-                        actions.add(() -> {
-                            self[0].dismiss();
-                            launcher.open(pkg);
-                        });
-                    }
-                }
-                final String query = q;
-                rows.add("Search YouTube for \"" + q + "\"");
-                actions.add(() -> {
-                    self[0].dismiss();
-                    view(act, "https://www.youtube.com/results?search_query=" + Uri.encode(query));
-                });
-                rows.add("Search the web for \"" + q + "\"");
-                actions.add(() -> {
-                    self[0].dismiss();
-                    view(act, "https://www.google.com/search?q=" + Uri.encode(query));
-                });
+            results.removeAllViews();
+            if (q.isEmpty()) {
+                return;
             }
-            adapter.notifyDataSetChanged();
+            String low = q.toLowerCase();
+            int shown = 0;
+            for (int i = 0; i < labels.size() && shown < 4; i++) {
+                if (labels.get(i).toLowerCase().contains(low)) {
+                    final String pkg = pkgs.get(i);
+                    results.addView(row(act, th, density, "Open  " + labels.get(i), () -> {
+                        d.dismiss();
+                        launcher.open(pkg);
+                    }));
+                    shown++;
+                }
+            }
+            final String query = q;
+            results.addView(row(act, th, density, "Search YouTube for \"" + q + "\"", () -> {
+                d.dismiss();
+                view(act, "https://www.youtube.com/results?search_query=" + Uri.encode(query));
+            }));
+            results.addView(row(act, th, density, "Search the web for \"" + q + "\"", () -> {
+                d.dismiss();
+                view(act, "https://www.google.com/search?q=" + Uri.encode(query));
+            }));
         };
         input.addTextChangedListener(new TextWatcher() {
             @Override
@@ -108,29 +114,56 @@ final class SearchDialog {
                 // not needed
             }
         });
-        list.setOnItemClickListener((parent, v, pos, id) -> {
-            if (pos >= 0 && pos < actions.size()) {
-                actions.get(pos).run();
-            }
-        });
+        // Enter on the keyboard runs the first result (an app if one matches, else YouTube).
         input.setOnEditorActionListener((v, action, ev) -> {
-            if (actions.size() > 1) {
-                actions.get(1).run();
+            if (results.getChildCount() > 0) {
+                results.getChildAt(0).performClick();
             }
             return true;
         });
-        rebuild[0].run();
 
-        AlertDialog d = new AlertDialog.Builder(act, android.R.style.Theme_Material_Dialog_Alert)
-                .setTitle("Search")
-                .setView(box)
-                .create();
-        self[0] = d;
+        d.setContentView(box);
+        Window w = d.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            w.setGravity(Gravity.TOP | Gravity.START);
+            w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            w.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            w.setDimAmount(0.6f);
+            w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
+                    | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
+        }
         d.show();
+        input.requestFocus();
         return d;
     }
 
-    private static void voice(Activity act) {
+    private static View row(Activity act, final Theme th, float density, String text, final Runnable go) {
+        final TextView t = new TextView(act);
+        t.setText(text);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        t.setTextColor(th.text);
+        t.setSingleLine(true);
+        t.setPadding(dp(density, 24), dp(density, 12), dp(density, 24), dp(density, 12));
+        t.setFocusable(true);
+        t.setClickable(true);
+        final GradientDrawable bg = new GradientDrawable();
+        bg.setColor(th.pill);
+        bg.setCornerRadius(dp(density, 24));
+        t.setBackground(bg);
+        t.setOnFocusChangeListener((v, focused) -> {
+            bg.setColor(focused ? th.focusBg : th.pill);
+            t.setTextColor(focused ? th.focusText : th.text);
+        });
+        t.setOnClickListener(v -> go.run());
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = dp(density, 8);
+        t.setLayoutParams(lp);
+        return t;
+    }
+
+    static void voice(Activity act) {
         String[] tries = {Intent.ACTION_ASSIST, Intent.ACTION_VOICE_COMMAND, "android.intent.action.VOICE_ASSIST"};
         for (String action : tries) {
             try {
@@ -150,5 +183,9 @@ final class SearchDialog {
         } catch (Exception e) {
             Toast.makeText(act, "Nothing can open that", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private static int dp(float density, int v) {
+        return (int) (v * density + 0.5f);
     }
 }

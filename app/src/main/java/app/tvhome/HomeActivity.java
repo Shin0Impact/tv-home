@@ -576,6 +576,16 @@ public class HomeActivity extends Activity {
         header.setPadding(0, dp(24), 0, dp(4));
         headerView = header;
 
+        SearchBar searchBar = new SearchBar(this);
+        searchBar.setOnClickListener(v -> showSearch(false));
+        LinearLayout.LayoutParams sbLp = new LinearLayout.LayoutParams(dp(330), dp(44));
+        header.addView(searchBar, sbLp);
+        IconButton mic = new IconButton(this, Icons.MIC);
+        mic.setOnClickListener(v -> showSearch(true));
+        LinearLayout.LayoutParams micLp = iconParams();
+        micLp.leftMargin = dp(8);
+        header.addView(mic, micLp);
+
         unhideBtn = pill("Show hidden");
         unhideBtn.setVisibility(View.GONE);
         unhideBtn.setOnClickListener(v -> {
@@ -623,14 +633,6 @@ public class HomeActivity extends Activity {
         timeLp.rightMargin = dp(18);
         header.addView(clockCol, timeLp);
 
-        IconButton search = new IconButton(this, Icons.SEARCH);
-        search.setOnClickListener(v -> showSearch());
-        header.addView(search, iconParams());
-
-        IconButton inputs = new IconButton(this, Icons.INPUT);
-        inputs.setOnClickListener(v -> showInputs());
-        header.addView(inputs, iconParams());
-
         IconButton wifi = new IconButton(this, IconButton.WIFI);
         wifi.setOnClickListener(v -> safeStart(new Intent(Settings.ACTION_WIFI_SETTINGS)));
         wifi.online = isOnline();
@@ -672,6 +674,41 @@ public class HomeActivity extends Activity {
             updateWeather();
         });
         return root;
+    }
+
+    /** Google TV style search field: a long rounded bar with a magnifier and a hint. */
+    private class SearchBar extends View {
+        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        SearchBar(Context c) {
+            super(c);
+            setFocusable(true);
+            setClickable(true);
+            setOnFocusChangeListener((v, focused) -> {
+                invalidate();
+                if (focused) {
+                    ensureVisible(v);
+                }
+            });
+        }
+
+        @Override
+        protected void onDraw(Canvas cv) {
+            float w = getWidth();
+            float h = getHeight();
+            boolean f = isFocused();
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(f ? th.focusBg : th.pill);
+            cv.drawRoundRect(0, 0, w, h, h / 2, p);
+            int ink = f ? th.focusText : th.text;
+            Icons.draw(cv, Icons.SEARCH, dp(26), h / 2, dp(26), ink, f ? th.focusBg : th.pill);
+            p.setColor(f ? th.focusText : th.dim);
+            p.setTextSize(dp(15));
+            p.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
+            Paint.FontMetrics fm = p.getFontMetrics();
+            cv.drawText("Search apps, YouTube and the web", dp(48),
+                    h / 2 - (fm.ascent + fm.descent) / 2, p);
+        }
     }
 
     private LinearLayout.LayoutParams iconParams() {
@@ -778,6 +815,7 @@ public class HomeActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setClipChildren(false);
+        row.setClipToPadding(false); // a padded row would otherwise cut off the enlarged, focused tile
         return row;
     }
 
@@ -2342,27 +2380,25 @@ public class HomeActivity extends Activity {
     }
 
     /** Search box (voice, apps, YouTube, web). */
-    private void showSearch() {
+    private void showSearch(boolean voice) {
         dismissDialog();
+        if (voice) {
+            SearchDialog.voice(this);
+            return;
+        }
         List<String> labels = new ArrayList<>();
         List<String> pkgs = new ArrayList<>();
         for (App a : shownApps) {
             labels.add(a.label);
             pkgs.add(a.pkg);
         }
-        openDialog = SearchDialog.show(this, labels, pkgs, pkg -> {
+        openDialog = SearchDialog.show(this, th, labels, pkgs, pkg -> {
             for (App a : shownApps) {
                 if (a.pkg.equals(pkg)) {
                     launch(a);
                 }
             }
         });
-    }
-
-    /** The TV's inputs (HDMI 1, 2, 3 ...). */
-    private void showInputs() {
-        dismissDialog();
-        openDialog = Inputs.show(this);
     }
 
     /** Asks for the city used by the weather line. */
@@ -2512,6 +2548,7 @@ public class HomeActivity extends Activity {
         if (tintAnim != null) {
             tintAnim.cancel();
         }
+        final int keepY = scroll != null ? scroll.getScrollY() : 0;
         final ViewGroup content = (ViewGroup) findViewById(android.R.id.content);
         final View oldRoot = fade && content != null && content.getChildCount() > 0
                 ? content.getChildAt(0) : null;
@@ -2537,6 +2574,23 @@ public class HomeActivity extends Activity {
             // Rebuild from what is already in memory (no package scan, no image loading), all at
             // once, so nothing heavy happens while the fade is running.
             render(new ArrayList<>(shownApps));
+        }
+        // Put the new screen at the same scroll position as the old one, before its first frame, so
+        // nothing jumps while the theme changes.
+        if (keepY > 0) {
+            final View sc = scroll;
+            sc.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+                @Override
+                public boolean onPreDraw() {
+                    if (sc.getHeight() == 0 || grid.getHeight() == 0) {
+                        return true;
+                    }
+                    sc.getViewTreeObserver().removeOnPreDrawListener(this);
+                    scrollAnims.clear();
+                    sc.scrollTo(0, keepY);
+                    return true;
+                }
+            });
         }
         if (oldRoot != null) {
             // Fade it as one flat layer on the graphics chip, so the fade stays smooth on this weak TV.

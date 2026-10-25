@@ -21,6 +21,7 @@ final class Icons {
     static final int CAST = 10;
     static final int SEARCH = 11;
     static final int INPUT = 12;
+    static final int MIC = 13;
 
     private static final Paint P = new Paint(Paint.ANTI_ALIAS_FLAG);
     private static final RectF R = new RectF();
@@ -210,6 +211,17 @@ final class Icons {
                 cv.drawLine(ox + s * 0.14f, cy, ox + s * 0.56f, cy, P);
                 cv.drawLine(ox + s * 0.44f, cy - s * 0.1f, ox + s * 0.56f, cy, P);
                 cv.drawLine(ox + s * 0.44f, cy + s * 0.1f, ox + s * 0.56f, cy, P);
+                break;
+            }
+            case MIC: {
+                P.setStyle(Paint.Style.STROKE);
+                P.setStrokeWidth(s * 0.07f);
+                R.set(cx - s * 0.1f, cy - s * 0.3f, cx + s * 0.1f, cy + s * 0.05f);
+                cv.drawRoundRect(R, s * 0.1f, s * 0.1f, P);
+                R.set(cx - s * 0.2f, cy - s * 0.15f, cx + s * 0.2f, cy + s * 0.2f);
+                cv.drawArc(R, 0, 180, false, P);
+                cv.drawLine(cx, cy + s * 0.2f, cx, cy + s * 0.3f, P);
+                cv.drawLine(cx - s * 0.1f, cy + s * 0.3f, cx + s * 0.1f, cy + s * 0.3f, P);
                 break;
             }
             default:

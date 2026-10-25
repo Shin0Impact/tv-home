@@ -40,6 +40,7 @@ final class QuickPanel {
     private Theme th;
     private LinearLayout notesBox;
     private TextView clearBtn;
+    private LinearLayout sourceBox;
 
     QuickPanel(Context ctx, Runnable close, Runnable openSettings) {
         this.ctx = ctx;
@@ -93,6 +94,7 @@ final class QuickPanel {
                 {"Bluetooth", "", Icons.BLUETOOTH, Settings.ACTION_BLUETOOTH_SETTINGS, false},
                 {"Sound", "", Icons.SOUND, Settings.ACTION_SOUND_SETTINGS, false},
                 {"Display", "", Icons.DISPLAY, Settings.ACTION_DISPLAY_SETTINGS, false},
+                {"Source", "", Icons.INPUT, "app.tvhome.SOURCE", false},
                 {"Keyboard", "", Icons.KEYBOARD, Settings.ACTION_INPUT_METHOD_SETTINGS, false},
                 {"Screen saver", "", Icons.MOON, "app.tvhome.SCREENSAVER", false},
                 {"Date & time", "", Icons.CLOCK, Settings.ACTION_DATE_SETTINGS, false},
@@ -117,6 +119,14 @@ final class QuickPanel {
             cell.setOnClickListener(v -> openAction(action));
             row.addView(cell, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         }
+
+        // The TV's inputs; opened by the Source button.
+        sourceBox = new LinearLayout(ctx);
+        sourceBox.setOrientation(LinearLayout.VERTICAL);
+        sourceBox.setVisibility(View.GONE);
+        sourceBox.setPadding(0, dp(6), 0, 0);
+        content.addView(sourceBox, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         // Notifications.
         LinearLayout head = new LinearLayout(ctx);
@@ -183,7 +193,42 @@ final class QuickPanel {
         return frame;
     }
 
+    private void toggleSources() {
+        if (sourceBox.getVisibility() == View.VISIBLE) {
+            sourceBox.setVisibility(View.GONE);
+            return;
+        }
+        sourceBox.removeAllViews();
+        final java.util.ArrayList<String> ids = new java.util.ArrayList<>();
+        java.util.ArrayList<String> names = new java.util.ArrayList<>();
+        Inputs.list(ctx, ids, names);
+        if (names.isEmpty()) {
+            Toast.makeText(ctx, "No inputs found", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        for (int i = 0; i < names.size(); i++) {
+            final String id = ids.get(i);
+            TextView p = pill(names.get(i));
+            p.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            p.setPadding(dp(18), dp(9), dp(18), dp(9));
+            p.setOnClickListener(v -> {
+                Inputs.switchTo(ctx, id);
+                close.run();
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.bottomMargin = dp(6);
+            sourceBox.addView(p, lp);
+        }
+        sourceBox.setVisibility(View.VISIBLE);
+        sourceBox.getChildAt(0).requestFocus();
+    }
+
     private void openAction(String action) {
+        if ("app.tvhome.SOURCE".equals(action)) {
+            toggleSources();
+            return;
+        }
         try {
             if ("app.tvhome.SCREENSAVER".equals(action)) {
                 // Start the screen saver right now (what the Settings screen only lets you pick).
