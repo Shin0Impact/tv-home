@@ -55,8 +55,7 @@ final class SearchDialog {
         box.setPadding(dp(density, 48), dp(density, 28), dp(density, 48), dp(density, 20));
         GradientDrawable sheet = new GradientDrawable();
         sheet.setColor(th.sheet);
-        sheet.setCornerRadii(new float[]{0, 0, 0, 0, dp(density, 28), dp(density, 28), dp(density, 28), dp(density, 28)});
-        box.setBackground(sheet);
+                box.setBackground(sheet);
 
         // Every app on the home screen that can take a search (a standard search, Google's app
         // search action, or "play from search") gets its own row, so this list builds itself.
@@ -86,7 +85,7 @@ final class SearchDialog {
         sv.setVerticalScrollBarEnabled(false);
         sv.addView(results);
         LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(density, 300));
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
         rlp.topMargin = dp(density, 14);
         box.addView(sv, rlp);
 
@@ -172,15 +171,14 @@ final class SearchDialog {
             return true;
         });
 
-        d.setContentView(box);
+        d.setContentView(box, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         Window w = d.getWindow();
         if (w != null) {
             w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             w.setGravity(Gravity.TOP | Gravity.START);
             w.getDecorView().setPadding(0, 0, 0, 0);
-            w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            w.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-            w.setDimAmount(0.6f);
+            w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
             w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
                     | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
         }

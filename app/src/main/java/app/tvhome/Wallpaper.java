@@ -23,6 +23,47 @@ final class Wallpaper {
     static final String[] SRC_NAMES = {"Bing daily", "Featured photo", "Wikipedia picture of the day",
             "Random photo"};
 
+    /**
+     * Wallpaper categories (safe-for-work pictures from Wallhaven, no key needed):
+     * {id, name, group, search words, Wallhaven categories (general/anime/people)}.
+     */
+    static final String[][] CATS = {
+            {"movies", "Movies", "Media", "cinematic movie", "100"},
+            {"cartoons", "Cartoons", "Media", "cartoon", "100"},
+            {"anime", "Anime", "Media", "anime", "010"},
+            {"games", "Video games", "Media", "video game", "100"},
+            {"heroes", "Superheroes", "Media", "superhero", "100"},
+            {"japan", "Japan", "Travel", "japan", "100"},
+            {"china", "China", "Travel", "china", "100"},
+            {"usa", "USA", "Travel", "new york usa", "100"},
+            {"europe", "Europe", "Travel", "europe city", "100"},
+            {"italy", "Italy", "Travel", "italy", "100"},
+            {"iceland", "Iceland", "Travel", "iceland", "100"},
+            {"dubai", "Dubai", "Travel", "dubai", "100"},
+            {"egypt", "Egypt", "Travel", "egypt", "100"},
+            {"india", "India", "Travel", "india", "100"},
+            {"brazil", "Brazil", "Travel", "brazil", "100"},
+            {"space", "Space", "Nature and more", "space", "100"},
+            {"nature", "Nature", "Nature and more", "nature landscape", "100"},
+            {"ocean", "Ocean", "Nature and more", "ocean", "100"},
+            {"cars", "Cars", "Nature and more", "sports car", "100"},
+            {"city", "Cities at night", "Nature and more", "city night", "100"}};
+
+    static String[] cat(String id) {
+        for (String[] c : CATS) {
+            if (c[0].equals(id)) {
+                return c;
+            }
+        }
+        return null;
+    }
+
+    /** True when the saved wallpaper is one of the categories. */
+    static boolean isCategory(String wall) {
+        String s = source(wall);
+        return s != null && s.startsWith("wh-") && cat(s.substring(3)) != null;
+    }
+
     /** Dark designs: three gradient colours, then two soft glows. */
     private static final int[][] DARK = {
             {0xFF08122A, 0xFF16264F, 0xFF0A1A2E, 0x665B6CFF, 0x4419C2B0},
@@ -69,6 +110,9 @@ final class Wallpaper {
             return BUILTIN_NAMES[b];
         }
         String s = source(wall);
+        if (isCategory(wall)) {
+            return cat(s.substring(3))[1];
+        }
         for (int i = 0; s != null && i < SRC_IDS.length; i++) {
             if (SRC_IDS[i].equals(s)) {
                 return SRC_NAMES[i];
@@ -156,6 +200,31 @@ final class Wallpaper {
                         String u = info.getJSONObject(0).optString("thumburl", "");
                         if (u.startsWith("https://") && !u.endsWith(".svg.png")) {
                             return u;
+                        }
+                    }
+                }
+                return null;
+            }
+            if (src.startsWith("wh-")) {
+                String[] c = cat(src.substring(3));
+                if (c == null) {
+                    return null;
+                }
+                String json = Net.text("https://wallhaven.cc/api/v1/search?q="
+                        + java.net.URLEncoder.encode(c[3], "UTF-8") + "&categories=" + c[4]
+                        + "&purity=100&atleast=1920x1080&ratios=16x9&sorting=toplist&topRange=1y");
+                if (json == null) {
+                    return null;
+                }
+                org.json.JSONArray data = new JSONObject(json).getJSONArray("data");
+                int day = (int) (System.currentTimeMillis() / 86400000L);
+                for (int pass = 0; pass < 2; pass++) {
+                    for (int k = 0; k < data.length(); k++) {
+                        JSONObject o = data.getJSONObject((day + k) % data.length());
+                        boolean jpeg = o.optString("file_type", "").contains("jpeg");
+                        long size = o.optLong("file_size", 0);
+                        if (size > 0 && size < 12L * 1024 * 1024 && (jpeg || pass == 1)) {
+                            return o.getString("path");
                         }
                     }
                 }

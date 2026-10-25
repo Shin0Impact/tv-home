@@ -45,6 +45,7 @@ final class SettingsPanel {
     private final Root host;
     /** -1 = the list of settings; otherwise the index of the setting shown in the bottom bar. */
     private int bar = -1;
+    private boolean inCats;
     private int listFocus = 0;
     private Theme th;
 
@@ -66,6 +67,10 @@ final class SettingsPanel {
 
     /** Back: from the bottom bar to the list. Returns false when the list itself should close. */
     boolean back() {
+        if (inCats) {
+            showBar(2, -1);
+            return true;
+        }
         if (bar >= 0) {
             showList(bar);
             return true;
@@ -154,6 +159,7 @@ final class SettingsPanel {
 
     private void showList(int focusIndex) {
         bar = -1;
+        inCats = false;
         th = Theme.load(prefs);
         host.removeAllViews();
         host.setBackgroundColor(0x88000000);
@@ -245,6 +251,7 @@ final class SettingsPanel {
     /** Opens setting {@code index} as a bar along the bottom; focusPos picks the choice to focus (-1 = the current one). */
     private void showBar(final int index, final int focusPos) {
         bar = index;
+        inCats = false;
         th = Theme.load(prefs);
         host.removeAllViews();
         host.setBackgroundColor(0x33000000); // light dim, so a theme change stays visible behind the bar
@@ -437,6 +444,14 @@ final class SettingsPanel {
                     });
                     addChoice(row, items, c);
                 }
+                final boolean catOn = Wallpaper.isCategory(wall) && !th.aware;
+                if (catOn) {
+                    selected = items.size();
+                }
+                View cats = choice("Categories" + (catOn ? " \u00B7 " + Wallpaper.name(wall) : "") + "  \u203A",
+                        0, catOn, false);
+                cats.setOnClickListener(v -> showCategories(0));
+                addChoice(row, items, cats);
                 break;
             }
             case 3: {
@@ -496,6 +511,78 @@ final class SettingsPanel {
             }
         }
         return selected;
+    }
+
+    /** The wallpaper categories: a card the size and shape of the quick menu. */
+    private void showCategories(int focusIndex) {
+        bar = -1;
+        inCats = true;
+        th = Theme.load(prefs);
+        host.removeAllViews();
+        host.setBackgroundColor(0x88000000);
+
+        LinearLayout panel = new LinearLayout(ctx);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(18), dp(22), dp(18), dp(16));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(th.sheet);
+        bg.setCornerRadius(dp(26));
+        panel.setBackground(bg);
+
+        TextView title = new TextView(ctx);
+        title.setText("Wallpaper categories");
+        title.setTextColor(th.text);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        title.setPadding(dp(6), 0, 0, dp(10));
+        panel.addView(title);
+
+        ScrollView sv = new ScrollView(ctx);
+        sv.setVerticalScrollBarEnabled(false);
+        LinearLayout list = new LinearLayout(ctx);
+        list.setOrientation(LinearLayout.VERTICAL);
+        sv.addView(list);
+        final String wall = prefs.getString("wall", "none");
+        final List<View> rows = new ArrayList<>();
+        String group = "";
+        for (int i = 0; i < Wallpaper.CATS.length; i++) {
+            final String[] c = Wallpaper.CATS[i];
+            if (!c[2].equals(group)) {
+                group = c[2];
+                list.addView(sectionLabel(group));
+            }
+            boolean on = ("d:wh-" + c[0]).equals(wall) && !th.aware;
+            View row = listRow(c[1], on ? "Current" : "");
+            if (on) {
+                ((GradientDrawable) row.getBackground()).setStroke(dp(2), Theme.mix(th.pill, th.text, 0.75f));
+            }
+            final int pos = rows.size();
+            row.setOnClickListener(v -> {
+                prefs.edit().putBoolean("aware", false).putString("wall", "d:wh-" + c[0]).apply();
+                looked();
+                showCategories(pos);
+            });
+            rows.add(row);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(50));
+            lp.bottomMargin = dp(6);
+            list.addView(row, lp);
+        }
+        panel.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        TextView back = pill("Back");
+        back.setGravity(Gravity.CENTER);
+        back.setOnClickListener(v -> showBar(2, -1));
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        blp.topMargin = dp(8);
+        panel.addView(back, blp);
+
+        FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(dp(332),
+                ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END);
+        plp.setMargins(0, dp(14), dp(14), dp(14));
+        host.addView(panel, plp);
+        final View target = rows.get(Math.max(0, Math.min(focusIndex, rows.size() - 1)));
+        target.post(target::requestFocus);
     }
 
     /** Turns the bar into a small text field for the weather city. */
