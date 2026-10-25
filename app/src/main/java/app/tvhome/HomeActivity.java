@@ -150,6 +150,15 @@ public class HomeActivity extends Activity {
         public boolean arrowScroll(int direction) {
             return moveFocusOnly(this, direction);
         }
+
+        /**
+         * Android's own "scroll to the focused view" jump. We animate the scrolling ourselves, and
+         * the two fighting each other was the visible shake, so this one is switched off.
+         */
+        @Override
+        protected int computeScrollDeltaToGetChildRectOnScreen(android.graphics.Rect rect) {
+            return 0;
+        }
     }
 
     private static class HScroll extends HorizontalScrollView {
@@ -160,6 +169,11 @@ public class HomeActivity extends Activity {
         @Override
         public boolean arrowScroll(int direction) {
             return moveFocusOnly(this, direction);
+        }
+
+        @Override
+        protected int computeScrollDeltaToGetChildRectOnScreen(android.graphics.Rect rect) {
+            return 0;
         }
     }
 
