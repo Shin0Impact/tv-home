@@ -53,13 +53,17 @@ final class FolderIcon extends Drawable {
             float left = b.left + pad + (i % 2) * (cw + gap);
             float top = b.top + pad + (i / 2) * (ch + gap);
             cell.set(left, top, left + cw, top + ch);
-            paint.setColor(0x26FFFFFF);
-            c.drawRoundRect(cell, radius, radius, paint);
             Drawable d = kids.get(i);
+            boolean banner = d != null && wide.get(i);
+            if (!banner) {
+                // Only icons get a backing tile; banners sit on their own so no grey shows at the sides.
+                paint.setColor(0x26FFFFFF);
+                c.drawRoundRect(cell, radius, radius, paint);
+            }
             if (d == null) {
                 continue;
             }
-            if (wide.get(i)) {
+            if (banner) {
                 // Shrink the banner to fit the cell but keep its own shape (16:9 if it has none).
                 int iw = d.getIntrinsicWidth();
                 int ih = d.getIntrinsicHeight();
