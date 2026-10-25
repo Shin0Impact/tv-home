@@ -53,10 +53,7 @@ final class Wallpaper {
     }
 
     static int builtinIndex(String wall) {
-        if (wall != null && wall.length() == 2 && wall.charAt(0) == 'b') {
-            return wall.charAt(1) - '0';
-        }
-        return -1;
+        return -1; // the built-in gradient wallpapers were removed
     }
 
     static String source(String wall) {

@@ -115,12 +115,14 @@ public class KeyService extends AccessibilityService {
                 box.requestFocus();
             }).build();
             FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(
-                    (int) (400 * density + 0.5f), ViewGroup.LayoutParams.MATCH_PARENT,
+                    (int) (330 * density + 0.5f), ViewGroup.LayoutParams.MATCH_PARENT,
                     Gravity.END);
             holder.addView(panel, plp);
             WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
-                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                    android.provider.Settings.canDrawOverlays(this)
+                            ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                            : WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                     PixelFormat.TRANSLUCENT);
             holder.setBackgroundColor(0x80000000);

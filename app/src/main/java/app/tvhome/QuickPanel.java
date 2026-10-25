@@ -55,18 +55,18 @@ final class QuickPanel {
 
         LinearLayout panel = new LinearLayout(ctx);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(22), dp(22), dp(22), dp(16));
+        panel.setPadding(dp(18), dp(18), dp(18), dp(12));
         // A floating rounded card with a hairline edge, not a slab glued to the screen edge.
         GradientDrawable bg = new GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM, Theme.grad(th.sheet));
-        bg.setCornerRadius(dp(34));
+        bg.setCornerRadius(dp(26));
         panel.setBackground(bg);
 
         android.widget.TextClock clock = new android.widget.TextClock(ctx);
         clock.setFormat12Hour("h:mm");
         clock.setFormat24Hour("HH:mm");
         clock.setTextColor(th.text);
-        clock.setTextSize(TypedValue.COMPLEX_UNIT_SP, 44);
+        clock.setTextSize(TypedValue.COMPLEX_UNIT_SP, 34);
         clock.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
         clock.setIncludeFontPadding(false);
         clock.setPadding(dp(4), 0, 0, 0);
@@ -118,7 +118,7 @@ final class QuickPanel {
             View cell = tile((String) o[0], statusFor((String) o[0]), (Integer) o[2], (Boolean) o[4]);
             final String action = (String) o[3];
             cell.setOnClickListener(v -> openAction(action));
-            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0, dp(66), 1f);
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0, dp(54), 1f);
             clp.leftMargin = dp(i % perRow == 0 ? 0 : 5);
             clp.rightMargin = dp(i % perRow == 0 ? 5 : 0);
             row.addView(cell, clp);
@@ -414,7 +414,7 @@ final class QuickPanel {
         cell.setClickable(true);
         cell.setPadding(dp(14), 0, dp(10), 0);
         final GradientDrawable bg = new GradientDrawable();
-        bg.setCornerRadius(dp(22));
+        bg.setCornerRadius(dp(18));
         final int base = th.light ? 0x14000000 : 0x24FFFFFF;
         bg.setColor(base);
         cell.setBackground(bg);
@@ -436,8 +436,8 @@ final class QuickPanel {
                 Icons.draw(cv, icon, w / 2, h / 2, r * 2f * 0.85f, ink, fill);
             }
         };
-        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(40), dp(40));
-        dlp.rightMargin = dp(12);
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(34), dp(34));
+        dlp.rightMargin = dp(10);
         cell.addView(disc, dlp);
 
         LinearLayout col = new LinearLayout(ctx);
@@ -445,7 +445,7 @@ final class QuickPanel {
         final TextView name = new TextView(ctx);
         name.setText(label);
         name.setTextColor(th.text);
-        name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         name.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.END);
@@ -453,7 +453,7 @@ final class QuickPanel {
         final TextView st = new TextView(ctx);
         st.setText(status);
         st.setTextColor(th.dim);
-        st.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        st.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         st.setSingleLine(true);
         st.setVisibility(status.isEmpty() ? View.GONE : View.VISIBLE);
         col.addView(st);
@@ -464,7 +464,6 @@ final class QuickPanel {
             name.setTextColor(focused ? th.focusText : th.text);
             st.setTextColor(focused ? th.focusText : th.dim);
             disc.invalidate();
-            v.animate().scaleX(focused ? 1.03f : 1f).scaleY(focused ? 1.03f : 1f).setDuration(110).start();
         });
         return cell;
     }

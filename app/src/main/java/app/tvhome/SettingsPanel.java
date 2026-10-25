@@ -97,7 +97,7 @@ final class SettingsPanel {
         return (int) (v * density + 0.5f);
     }
 
-    private static final String[] TITLES = {"Theme", "Content aware", "Highlight", "Wallpaper", "Top bar", "Home screen"};
+    private static final String[] TITLES = {"Theme", "Highlight", "Wallpaper", "Top bar", "Home screen"};
 
     /** Full-screen host: draws the dim itself and turns Up/Down in the bottom bar into "other setting". */
     private class Root extends FrameLayout {
@@ -128,17 +128,18 @@ final class SettingsPanel {
             case 0:
                 return Theme.modeName(th.mode);
             case 1:
-                return th.aware ? "On" : "Off";
-            case 2:
                 return Theme.HL_NAMES[th.hlIndex];
-            case 3: {
+            case 2: {
                 String wall = prefs.getString("wall", "none");
-                if (Theme.OLED.equals(th.mode) || "none".equals(wall)) {
+                if (Theme.OLED.equals(th.mode)) {
                     return "Off";
                 }
-                return Wallpaper.name(wall);
+                if (th.aware) {
+                    return "Content aware";
+                }
+                return Wallpaper.source(wall) == null ? "Off" : Wallpaper.name(wall);
             }
-            case 4: {
+            case 3: {
                 String city = Weather.city(prefs);
                 return city.isEmpty() ? (Weather.fahrenheit(prefs) ? "\u00B0F" : "\u00B0C")
                         : city + " \u00B7 " + (Weather.fahrenheit(prefs) ? "\u00B0F" : "\u00B0C");
@@ -328,7 +329,6 @@ final class SettingsPanel {
         card.setOnFocusChangeListener((v, focused) -> {
             bg.setColor(focused ? th.focusBg : th.pill);
             t.setTextColor(focused ? th.focusText : th.text);
-            v.animate().scaleX(focused ? 1.05f : 1f).scaleY(focused ? 1.05f : 1f).setDuration(110).start();
         });
         return card;
     }
@@ -365,29 +365,6 @@ final class SettingsPanel {
                 break;
             }
             case 1: {
-                final boolean allowed = Theme.DARK.equals(th.mode) || Theme.LIGHT.equals(th.mode);
-                if (!allowed) {
-                    addChoice(row, items, choice("Dark and Light only", 0, false, false));
-                    break;
-                }
-                for (int i = 0; i < 2; i++) {
-                    final boolean value = i == 1;
-                    boolean on = th.aware == value;
-                    if (on) {
-                        selected = i;
-                    }
-                    View c = choice(value ? "On" : "Off", 0, on, false);
-                    final int pos = i;
-                    c.setOnClickListener(v -> {
-                        prefs.edit().putBoolean("aware", value).apply();
-                        looked();
-                        showBar(index, pos);
-                    });
-                    addChoice(row, items, c);
-                }
-                break;
-            }
-            case 2: {
                 for (int i = 0; i < Theme.HL_COLORS.length; i++) {
                     final int hi = i;
                     Swatch sw = new Swatch(ctx, i, i == th.hlIndex);
@@ -407,35 +384,39 @@ final class SettingsPanel {
                 }
                 break;
             }
-            case 3: {
+            case 2: {
                 final String wall = prefs.getString("wall", "none");
                 if (Theme.OLED.equals(th.mode)) {
                     addChoice(row, items, choice("OLED stays black", 0, false, false));
                     break;
                 }
+                final boolean awareOk = Theme.DARK.equals(th.mode) || Theme.LIGHT.equals(th.mode);
                 final List<String> values = new ArrayList<>();
                 final List<String> labels = new ArrayList<>();
                 values.add("none");
                 labels.add("Off");
-                for (int i = 0; i < Wallpaper.BUILTIN_NAMES.length; i++) {
-                    values.add("b" + i);
-                    labels.add(Wallpaper.BUILTIN_NAMES[i]);
+                if (awareOk) {
+                    values.add("aware");
+                    labels.add("Content aware");
                 }
                 for (int i = 0; i < Wallpaper.SRC_IDS.length; i++) {
                     values.add("d:" + Wallpaper.SRC_IDS[i]);
-                    labels.add("Daily \u00B7 " + Wallpaper.SRC_NAMES[i]);
+                    labels.add(Wallpaper.SRC_NAMES[i]);
                 }
                 for (int i = 0; i < values.size(); i++) {
                     final String value = values.get(i);
-                    boolean on = value.equals(wall) || (i == 0 && Wallpaper.builtinIndex(wall) < 0
-                            && Wallpaper.source(wall) == null);
+                    boolean on = "aware".equals(value) ? th.aware
+                            : "none".equals(value) ? (!th.aware && Wallpaper.source(wall) == null)
+                            : value.equals(wall) && !th.aware;
                     if (on) {
                         selected = i;
                     }
                     View c = choice(labels.get(i), 0, on, false);
                     final int pos = i;
                     c.setOnClickListener(v -> {
-                        prefs.edit().putString("wall", value).apply();
+                        boolean aware = "aware".equals(value);
+                        prefs.edit().putBoolean("aware", aware)
+                                .putString("wall", aware ? "none" : value).apply();
                         looked();
                         showBar(index, pos);
                     });
@@ -443,7 +424,7 @@ final class SettingsPanel {
                 }
                 break;
             }
-            case 4: {
+            case 3: {
                 final boolean fahr = Weather.fahrenheit(prefs);
                 if (askCity != null) {
                     String city = Weather.city(prefs);
