@@ -90,7 +90,6 @@ final class QuickPanel {
                 {"Bluetooth", "", Icons.BLUETOOTH, Settings.ACTION_BLUETOOTH_SETTINGS, false},
                 {"Sound", "", Icons.SOUND, Settings.ACTION_SOUND_SETTINGS, false},
                 {"Display", "", Icons.DISPLAY, Settings.ACTION_DISPLAY_SETTINGS, false},
-                {"Screen share", "", Icons.CAST, "app.tvhome.SHARE", false},
                 {"Keyboard", "", Icons.KEYBOARD, Settings.ACTION_INPUT_METHOD_SETTINGS, false},
                 {"Screen saver", "", Icons.MOON, "app.tvhome.SCREENSAVER", false},
                 {"Date & time", "", Icons.CLOCK, Settings.ACTION_DATE_SETTINGS, false},
@@ -191,18 +190,6 @@ final class QuickPanel {
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 } catch (Exception e) {
                     ctx.startActivity(new Intent(Settings.ACTION_DREAM_SETTINGS)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-                }
-            } else if ("app.tvhome.SHARE".equals(action)) {
-                // The TV's own receiver: some phones and tablets only see the TV while this is open.
-                // Google Cast needs nothing from here; the tablet's Cast button reaches it any time.
-                try {
-                    ctx.startActivity(new Intent(Intent.ACTION_MAIN)
-                            .setClassName("com.tcl.miracast", "com.tcl.miracast.MainActivity")
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-                } catch (Exception e) {
-                    ctx.startActivity(new Intent(Intent.ACTION_MAIN)
-                            .setClassName("com.tcl.miracast", "com.tcl.miracast.DeviceListActivity")
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 }
             } else if ("app.tvhome.OPEN_SETTINGS".equals(action)) {
