@@ -1966,14 +1966,21 @@ public class HomeActivity extends Activity {
 
     // ---------------------------------------------------------------- images
 
-    /** Wide pictures fill the card; square ones (app icons) sit whole above the text instead. */
+    /**
+     * Every picture fills the card. Tall ones (movie posters) are cut to a wide strip taken from
+     * the upper part, where the title and faces usually are.
+     */
     private void setArtBitmap(ImageView v, Bitmap b) {
-        boolean square = b.getWidth() < b.getHeight() * 13 / 10;
-        v.setScaleType(square ? ImageView.ScaleType.FIT_CENTER : ImageView.ScaleType.CENTER_CROP);
-        if (square) {
-            v.setPadding(dp(40), dp(14), dp(40), dp(78));
-        } else {
-            v.setPadding(0, 0, 0, 0);
+        v.setPadding(0, 0, 0, 0);
+        v.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        int wideH = b.getWidth() * 9 / 16;
+        if (b.getHeight() > wideH * 11 / 10) {
+            try {
+                int y = (int) ((b.getHeight() - wideH) * 0.22f);
+                b = Bitmap.createBitmap(b, 0, y, b.getWidth(), wideH);
+            } catch (Exception ignored) {
+                // show it uncropped
+            }
         }
         v.setImageBitmap(b);
     }
