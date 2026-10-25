@@ -84,6 +84,26 @@ public class KeyService extends AccessibilityService {
         if (overlay != null && event.getAction() == KeyEvent.ACTION_DOWN) {
             android.util.Log.i("TVHomeKey", "key while menu open: " + key);
         }
+        int appKey = RemoteKeys.indexOf(key);
+        if (appKey >= 0) {
+            // One of the remote's app buttons: open the app chosen in TV Home's settings.
+            Intent open = RemoteKeys.launchIntent(getPackageManager(),
+                    RemoteKeys.target(getSharedPreferences("home", MODE_PRIVATE), appKey));
+            if (open == null) {
+                return false; // nothing chosen (or not installed): the TV does what it always did
+            }
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                if (overlay != null) {
+                    closePanel();
+                }
+                try {
+                    startActivity(open);
+                } catch (Exception ignored) {
+                    // nothing to do
+                }
+            }
+            return true;
+        }
         boolean panel = key == KeyEvent.KEYCODE_NOTIFICATION || key == KeyEvent.KEYCODE_SETTINGS;
         boolean profile = key == KeyEvent.KEYCODE_PROFILE_SWITCH;
         if (!panel && !profile) {

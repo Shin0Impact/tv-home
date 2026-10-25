@@ -46,6 +46,8 @@ final class SettingsPanel {
     /** -1 = the list of settings; otherwise the index of the setting shown in the bottom bar. */
     private int bar = -1;
     private boolean inCats;
+    /** The remote button whose app is being picked, or -1. */
+    private int pickBtn = -1;
     private int listFocus = 0;
     private Theme th;
 
@@ -73,7 +75,12 @@ final class SettingsPanel {
     /** Back: from the bottom bar to the list. Returns false when the list itself should close. */
     boolean back() {
         if (inCats) {
-            showBar(2, -1);
+            int b = pickBtn;
+            if (b >= 0) {
+                showBar(5, b);
+            } else {
+                showBar(2, -1);
+            }
             return true;
         }
         if (bar >= 0) {
@@ -108,7 +115,7 @@ final class SettingsPanel {
         return (int) (v * density + 0.5f);
     }
 
-    private static final String[] TITLES = {"Theme", "Highlight", "Wallpaper", "Top bar", "Home screen"};
+    private static final String[] TITLES = {"Theme", "Highlight", "Wallpaper", "Top bar", "Home screen", "Remote buttons"};
 
     /** Full-screen host: draws the dim itself and turns Up/Down in the bottom bar into "other setting". */
     private class Root extends FrameLayout {
@@ -165,6 +172,7 @@ final class SettingsPanel {
     private void showList(int focusIndex) {
         bar = -1;
         inCats = false;
+        pickBtn = -1;
         th = Theme.load(prefs);
         host.removeAllViews();
         host.setBackgroundColor(0x88000000);
@@ -257,6 +265,7 @@ final class SettingsPanel {
     private void showBar(final int index, final int focusPos) {
         bar = index;
         inCats = false;
+        pickBtn = -1;
         th = Theme.load(prefs);
         host.removeAllViews();
         host.setBackgroundColor(0x33000000); // light dim, so a theme change stays visible behind the bar
@@ -482,7 +491,7 @@ final class SettingsPanel {
                 }
                 break;
             }
-            default: {
+            case 4: {
                 final boolean storeOn = prefs.getBoolean("store", true);
                 View store = choice("Play Store apps \u00B7 " + (storeOn ? "On" : "Off"), 0, false, false);
                 store.setOnClickListener(v -> {
@@ -505,9 +514,134 @@ final class SettingsPanel {
                 addChoice(row, items, order);
                 break;
             }
+            default: {
+                for (int i = 0; i < RemoteKeys.NAMES.length; i++) {
+                    final int btn = i;
+                    View c = choice(RemoteKeys.NAMES[i] + " · "
+                            + appName(RemoteKeys.target(prefs, i)), 0, false, false);
+                    c.setOnClickListener(v -> showAppPick(btn, 0));
+                    addChoice(row, items, c);
+                }
+                break;
+            }
         }
         return selected;
     }
+
+    private String appName(String pkg) {
+        if (pkg == null || pkg.isEmpty()) {
+            return "TV default";
+        }
+        try {
+            android.content.pm.PackageManager pm = ctx.getPackageManager();
+            return String.valueOf(pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)));
+        } catch (Exception e) {
+            return "Not installed";
+        }
+    }
+
+    /** Choose the app a remote button opens: a card the size and shape of the quick menu. */
+    private void showAppPick(final int btn, int focusIndex) {
+        bar = -1;
+        inCats = true;
+        pickBtn = btn;
+        th = Theme.load(prefs);
+        host.removeAllViews();
+        host.setBackgroundColor(0x88000000);
+
+        LinearLayout panel = new LinearLayout(ctx);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(18), dp(22), dp(18), dp(16));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(th.sheet);
+        bg.setCornerRadius(dp(26));
+        panel.setBackground(bg);
+
+        TextView title = new TextView(ctx);
+        title.setText(RemoteKeys.NAMES[btn] + " button opens");
+        title.setTextColor(th.text);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        title.setPadding(dp(6), 0, 0, dp(10));
+        panel.addView(title);
+
+        // Every app with a launcher entry, by name.
+        android.content.pm.PackageManager pm = ctx.getPackageManager();
+        final java.util.Map<String, String> apps = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        final java.util.Map<String, String> byName = new java.util.HashMap<>();
+        String[] cats = {Intent_LEANBACK, Intent_LAUNCHER};
+        for (String cat : cats) {
+            android.content.Intent q = new android.content.Intent(android.content.Intent.ACTION_MAIN)
+                    .addCategory(cat);
+            for (android.content.pm.ResolveInfo ri : pm.queryIntentActivities(q, 0)) {
+                String pkg = ri.activityInfo.packageName;
+                if (pkg.equals(ctx.getPackageName()) || byName.containsValue(pkg)) {
+                    continue;
+                }
+                String label = String.valueOf(ri.loadLabel(pm));
+                while (apps.containsKey(label)) {
+                    label = label + " ";
+                }
+                apps.put(label, pkg);
+                byName.put(label, pkg);
+            }
+        }
+
+        ScrollView sv = new ScrollView(ctx);
+        sv.setVerticalScrollBarEnabled(false);
+        LinearLayout list = new LinearLayout(ctx);
+        list.setOrientation(LinearLayout.VERTICAL);
+        sv.addView(list);
+        final String current = RemoteKeys.target(prefs, btn);
+        final List<View> rows = new ArrayList<>();
+        final List<String> labels = new ArrayList<>();
+        final List<String> pkgs = new ArrayList<>();
+        labels.add("TV default");
+        pkgs.add("");
+        for (java.util.Map.Entry<String, String> e : apps.entrySet()) {
+            labels.add(e.getKey().trim());
+            pkgs.add(e.getValue());
+        }
+        int focus = 0;
+        for (int i = 0; i < labels.size(); i++) {
+            final String pkg = pkgs.get(i);
+            boolean on = pkg.equals(current);
+            if (on) {
+                focus = i;
+            }
+            View row = listRow(labels.get(i), on ? "Current" : "");
+            if (on) {
+                ((GradientDrawable) row.getBackground()).setStroke(dp(2), Theme.mix(th.pill, th.text, 0.75f));
+            }
+            row.setOnClickListener(v -> {
+                prefs.edit().putString("rk_" + btn, pkg).apply();
+                showBar(5, btn);
+            });
+            rows.add(row);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(50));
+            lp.bottomMargin = dp(6);
+            list.addView(row, lp);
+        }
+        panel.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        TextView back = pill("Back");
+        back.setGravity(Gravity.CENTER);
+        back.setOnClickListener(v -> showBar(5, btn));
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        blp.topMargin = dp(8);
+        panel.addView(back, blp);
+
+        FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(dp(332),
+                ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END);
+        plp.setMargins(0, dp(14), dp(14), dp(14));
+        host.addView(panel, plp);
+        final View target = rows.get(Math.max(0, Math.min(focus, rows.size() - 1)));
+        target.post(target::requestFocus);
+    }
+
+    private static final String Intent_LEANBACK = "android.intent.category.LEANBACK_LAUNCHER";
+    private static final String Intent_LAUNCHER = "android.intent.category.LAUNCHER";
 
     /** The wallpaper categories: a card the size and shape of the quick menu. */
     private void showCategories(int focusIndex) {
