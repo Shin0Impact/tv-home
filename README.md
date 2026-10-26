@@ -17,6 +17,7 @@ Built for a TCL 55C655 Pro (Google TV, Android 12, ~2 GB RAM), where heavier lau
   out, move or delete it. The folder tile shows up to four of its apps.
 - **Quick menu** (remote Settings / notification button): clock, round shortcut buttons,
   notifications. It fades out for half a second when the TV's volume bar appears.
+- **Netflix cards**: highlighting the Netflix tile shows what is popular on Netflix in your country (from TMDB), and OK opens Netflix's search for that title.
 - **Double-press Home** to go back to the last app.
 - **Themes** (Dark, Gray, OLED, Light, Colour, Hero art), wallpaper and search.
 
@@ -30,6 +31,11 @@ Built for a TCL 55C655 Pro (Google TV, Android 12, ~2 GB RAM), where heavier lau
 | `KILL_BACKGROUND_PROCESSES` | The *Force stop* action. |
 | Accessibility service (`KeyService`) | Remote buttons (Settings, Profile, double-Home) and tracking the current app. |
 | Notification listener (`MediaListener`) | Live media cards and the notification list. |
+
+## Credits
+
+Netflix cards use the TMDB API but are not endorsed or certified by TMDB. The key is saved on the TV with
+`set-tmdb.ps1` (it is never part of this repository).
 
 ## Get the APK (no Android Studio needed)
 

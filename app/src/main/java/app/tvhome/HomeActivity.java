@@ -203,6 +203,9 @@ public class HomeActivity extends Activity {
     /** Top apps read from Google Play's public pages, shown when the Play Store tile is highlighted. */
     private volatile List<JSONObject> storeApps = new ArrayList<>();
     private volatile boolean storeLoading;
+    /** "Popular on Netflix" titles from TMDB, shown when the Netflix tile is highlighted. */
+    private volatile List<JSONObject> netflixItems = new ArrayList<>();
+    private volatile boolean netflixLoading;
 
     private SharedPreferences prefs;
     private float density;
@@ -297,6 +300,8 @@ public class HomeActivity extends Activity {
         } catch (Exception ignored) {
             // no cached store apps
         }
+        netflixItems = NetflixTop.cached(prefs);
+        takeTmdbKey(getIntent());
         density = getResources().getDisplayMetrics().density;
         int screenW = getResources().getDisplayMetrics().widthPixels;
         pad = dp(64);
@@ -398,6 +403,7 @@ public class HomeActivity extends Activity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        takeTmdbKey(intent);
         if (intent != null && intent.getBooleanExtra("settings", false)) {
             openSettingsOnResume = true; // from the quick settings panel's TV Home orb
         }
@@ -1358,6 +1364,9 @@ public class HomeActivity extends Activity {
         if (STORE_PKG.equals(a.pkg)) {
             maybeLoadStore();
         }
+        if (NetflixTop.PKG.equals(a.pkg)) {
+            maybeLoadNetflix();
+        }
         if (focusedApp != null && focusedApp.pkg.equals(a.pkg) && !heroItems.isEmpty()) {
             focusedApp = a;
             return;
@@ -1514,6 +1523,24 @@ public class HomeActivity extends Activity {
                 out.add(h);
             }
         }
+        if (NetflixTop.PKG.equals(a.pkg) && prefs.getBoolean("netflix", true)) {
+            int rank = 0;
+            for (JSONObject o : netflixItems) {
+                rank++;
+                HeroItem h = new HeroItem();
+                h.appLabel = a.label;
+                h.title = o.optString("title");
+                String year = o.optString("year");
+                h.subtitle = "Popular on Netflix #" + rank + "  ·  " + o.optString("kind")
+                        + (year.isEmpty() ? "" : "  ·  " + year);
+                String art = o.optString("art");
+                h.artUri = art.isEmpty() ? null : art;
+                h.banner = a.banner;
+                h.icon = a.icon;
+                h.intent = NetflixTop.openIntent(h.title);
+                out.add(h);
+            }
+        }
         if (out.isEmpty() && prefs.getBoolean("demo", false)) {
             // For trying out the carousel: a few sample cards for any app.
             String[] names = {"Sample card one", "Sample card two", "Sample card three", "Sample card four"};
@@ -1612,6 +1639,48 @@ public class HomeActivity extends Activity {
                 if (STORE_PKG.equals(lastFocusPkg) && !storeApps.isEmpty()) {
                     for (App x : shownApps) {
                         if (STORE_PKG.equals(x.pkg)) {
+                            focusedApp = null;
+                            applyHeroApp(x);
+                        }
+                    }
+                }
+            });
+        });
+    }
+
+    /** Saves a TMDB key sent by set-tmdb.ps1 (adb "am start ... --es tmdb_key KEY") and reloads the cards. */
+    private void takeTmdbKey(Intent intent) {
+        if (intent == null) {
+            return;
+        }
+        String key = intent.getStringExtra("tmdb_key");
+        if (key == null || key.trim().isEmpty()) {
+            return;
+        }
+        prefs.edit().putString("tmdb_key", key.trim()).remove("nf_at").apply();
+        intent.removeExtra("tmdb_key");
+        Toast.makeText(this, "TMDB key saved", Toast.LENGTH_SHORT).show();
+    }
+
+    /** Fetches what is popular on Netflix in the user's country from TMDB, at most every 12 hours. */
+    private void maybeLoadNetflix() {
+        if (!prefs.getBoolean("netflix", true) || netflixLoading || net.isShutdown()
+                || prefs.getString("tmdb_key", "").isEmpty()) {
+            return;
+        }
+        if (!netflixItems.isEmpty() && NetflixTop.fresh(prefs)) {
+            return;
+        }
+        netflixLoading = true;
+        net.execute(() -> {
+            String status = NetflixTop.refresh(prefs);
+            netflixItems = NetflixTop.cached(prefs);
+            prefs.edit().putString("netflixdebug", "Netflix cards: " + status).apply();
+            netflixLoading = false;
+            ui.post(() -> {
+                if (NetflixTop.PKG.equals(lastFocusPkg) && !netflixItems.isEmpty()) {
+                    for (App x : shownApps) {
+                        if (NetflixTop.PKG.equals(x.pkg)) {
                             focusedApp = null;
                             applyHeroApp(x);
                         }

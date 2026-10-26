@@ -506,6 +506,17 @@ final class SettingsPanel {
                     homeChanged();
                 });
                 addChoice(row, items, demo);
+                final boolean nfOn = prefs.getBoolean("netflix", true);
+                View nf = choice("Netflix cards · " + (nfOn ? "On" : "Off"), 0, false, false);
+                nf.setOnClickListener(v -> {
+                    prefs.edit().putBoolean("netflix", !nfOn).apply();
+                    homeChanged();
+                });
+                addChoice(row, items, nf);
+                View credit = choice("Netflix cards use the TMDB API but are not endorsed or certified by TMDB",
+                        0, false, false);
+                ((TextView) ((LinearLayout) credit).getChildAt(0)).setMaxWidth(dp(1000));
+                addChoice(row, items, credit);
                 View order = choice("Reset app order", 0, false, false);
                 order.setOnClickListener(v -> {
                     prefs.edit().remove("order").apply();
