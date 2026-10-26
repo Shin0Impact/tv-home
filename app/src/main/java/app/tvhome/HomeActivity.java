@@ -1531,7 +1531,7 @@ public class HomeActivity extends Activity {
                 h.appLabel = a.label;
                 h.title = o.optString("title");
                 String year = o.optString("year");
-                h.subtitle = "Popular on Netflix #" + rank + "  ·  " + o.optString("kind")
+                h.subtitle = "New & popular on Netflix #" + rank + "  ·  " + o.optString("kind")
                         + (year.isEmpty() ? "" : "  ·  " + year);
                 String art = o.optString("art");
                 h.artUri = art.isEmpty() ? null : art;

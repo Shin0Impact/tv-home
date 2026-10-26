@@ -17,7 +17,7 @@ Built for a TCL 55C655 Pro (Google TV, Android 12, ~2 GB RAM), where heavier lau
   out, move or delete it. The folder tile shows up to four of its apps.
 - **Quick menu** (remote Settings / notification button): clock, round shortcut buttons,
   notifications. It fades out for half a second when the TV's volume bar appears.
-- **Netflix cards**: highlighting the Netflix tile shows what is popular on Netflix in your country (from TMDB), and OK opens Netflix's search for that title.
+- **Netflix cards**: highlighting the Netflix tile shows what is new and popular on Netflix in your country (from TMDB), and OK opens Netflix's search for that title.
 - **Double-press Home** to go back to the last app.
 - **Themes** (Dark, Gray, OLED, Light, Colour, Hero art), wallpaper and search.
 

@@ -23,6 +23,8 @@ final class NetflixTop {
     static final String PKG = "com.netflix.ninja";
     static final long REFRESH_MS = 12L * 3600 * 1000;
     private static final int COUNT = 10;
+    /** Bumped when the way the list is chosen changes, so an older saved list is not shown. */
+    private static final int VERSION = 2;
     private static final String IMG = "https://image.tmdb.org/t/p/w780";
 
     private NetflixTop() {
@@ -42,7 +44,8 @@ final class NetflixTop {
     }
 
     static boolean fresh(SharedPreferences p) {
-        return !p.getString("nf_json", "[]").equals("[]")
+        return p.getInt("nf_ver", 0) == VERSION
+                && !p.getString("nf_json", "[]").equals("[]")
                 && System.currentTimeMillis() - p.getLong("nf_at", 0) < REFRESH_MS
                 && p.getString("nf_cc", "").equals(country(p, false));
     }
@@ -104,7 +107,7 @@ final class NetflixTop {
                 return "TMDB gave no titles for " + cc;
             }
             p.edit().putString("nf_json", out.toString()).putLong("nf_at", System.currentTimeMillis())
-                    .putString("nf_cc", cc).apply();
+                    .putString("nf_cc", cc).putInt("nf_ver", VERSION).apply();
             return out.length() + " titles for " + cc;
         } catch (Exception e) {
             return "failed: " + e.getClass().getSimpleName();
@@ -112,8 +115,13 @@ final class NetflixTop {
     }
 
     private static List<JSONObject> fetch(String type, String key, String cc, String lang) throws Exception {
+        // New and popular: released (or, for series, aired) in roughly the last six months.
+        java.util.Calendar since = java.util.Calendar.getInstance();
+        since.add(java.util.Calendar.DAY_OF_YEAR, -180);
+        String from = new java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(since.getTime());
         String url = "https://api.themoviedb.org/3/discover/" + type + "?api_key=" + URLEncoder.encode(key, "UTF-8")
                 + "&with_watch_providers=8&watch_monetization_types=flatrate&watch_region=" + cc
+                + ("movie".equals(type) ? "&primary_release_date.gte=" : "&air_date.gte=") + from
                 + "&sort_by=popularity.desc&include_adult=false&language=" + lang;
         String json = Net.text(url);
         List<JSONObject> out = new ArrayList<>();
