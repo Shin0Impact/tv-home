@@ -26,6 +26,49 @@ final class Net {
         }
     }
 
+    /** Sends a JSON body with POST and returns the answer as text, or null. */
+    static String postJson(String url, String body) {
+        HttpURLConnection conn = null;
+        InputStream in = null;
+        try {
+            if (!url.startsWith("https://")) {
+                return null;
+            }
+            conn = (HttpURLConnection) new URL(url).openConnection();
+            conn.setConnectTimeout(8000);
+            conn.setReadTimeout(15000);
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setRequestProperty("User-Agent", UA);
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.getOutputStream().write(body.getBytes("UTF-8"));
+            in = conn.getInputStream();
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[16 * 1024];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+                if (out.size() > 1024 * 1024) {
+                    return null;
+                }
+            }
+            return new String(out.toByteArray(), "UTF-8");
+        } catch (Exception e) {
+            return null;
+        } finally {
+            try {
+                if (in != null) {
+                    in.close();
+                }
+            } catch (Exception ignored) {
+                // closing
+            }
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
+    }
+
     /** Saves the file at url into dest (only if it fits max bytes). */
     static boolean download(String url, File dest, int max) {
         byte[] data = bytes(url, max);

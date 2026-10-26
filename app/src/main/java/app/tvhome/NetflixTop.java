@@ -24,7 +24,7 @@ final class NetflixTop {
     static final long REFRESH_MS = 12L * 3600 * 1000;
     private static final int COUNT = 10;
     /** Bumped when the way the list is chosen changes, so an older saved list is not shown. */
-    private static final int VERSION = 2;
+    private static final int VERSION = 3;
     private static final String IMG = "https://image.tmdb.org/t/p/w780";
 
     private NetflixTop() {
@@ -106,9 +106,19 @@ final class NetflixTop {
             if (out.length() == 0) {
                 return "TMDB gave no titles for " + cc;
             }
+            // Netflix's own page for each title, so OK can open the show itself.
+            int linked = 0;
+            for (int i = 0; i < out.length(); i++) {
+                JSONObject o = out.getJSONObject(i);
+                String link = netflixUrl(o.optString("title"), o.optString("kind"), o.optString("year"), cc);
+                o.put("url", link);
+                if (!link.isEmpty()) {
+                    linked++;
+                }
+            }
             p.edit().putString("nf_json", out.toString()).putLong("nf_at", System.currentTimeMillis())
                     .putString("nf_cc", cc).putInt("nf_ver", VERSION).apply();
-            return out.length() + " titles for " + cc;
+            return out.length() + " titles for " + cc + ", " + linked + " with a Netflix link";
         } catch (Exception e) {
             return "failed: " + e.getClass().getSimpleName();
         }
@@ -153,14 +163,83 @@ final class NetflixTop {
         return out;
     }
 
-    /** Opens Netflix's search for the title, which lists that title first. */
-    static Intent openIntent(String title) {
+    /**
+     * Asks JustWatch (an unofficial lookup that may change or stop working) for Netflix's own page
+     * for a title in this country. Returns "" when nothing matches; the card then just opens Netflix.
+     */
+    private static String netflixUrl(String title, String kind, String year, String cc) {
         try {
-            return new Intent(Intent.ACTION_VIEW,
-                    Uri.parse("nflx://www.netflix.com/search?q=" + URLEncoder.encode(title, "UTF-8")))
-                    .setPackage(PKG);
-        } catch (Exception e) {
-            return new Intent(Intent.ACTION_VIEW, Uri.parse("nflx://www.netflix.com/")).setPackage(PKG);
+            String query = "query Q($f: TitleFilter!, $c: Country!, $l: Language!) { popularTitles(country: $c, "
+                    + "filter: $f, first: 5) { edges { node { objectType content(country: $c, language: $l) "
+                    + "{ title originalReleaseYear } offers(country: $c, platform: WEB) "
+                    + "{ package { shortName } standardWebURL } } } } }";
+            JSONObject filter = new JSONObject().put("searchQuery", title);
+            JSONObject vars = new JSONObject().put("f", filter).put("c", cc).put("l", "en");
+            String body = new JSONObject().put("query", query).put("variables", vars).toString();
+            String json = Net.postJson("https://apis.justwatch.com/graphql", body);
+            if (json == null) {
+                return "";
+            }
+            JSONArray edges = new JSONObject(json).getJSONObject("data").getJSONObject("popularTitles")
+                    .getJSONArray("edges");
+            String want = "Movie".equals(kind) ? "MOVIE" : "SHOW";
+            int wantYear = year.isEmpty() ? -1 : Integer.parseInt(year);
+            for (int i = 0; i < edges.length(); i++) {
+                JSONObject node = edges.getJSONObject(i).getJSONObject("node");
+                if (!want.equals(node.optString("objectType"))) {
+                    continue;
+                }
+                int y = node.getJSONObject("content").optInt("originalReleaseYear", -1);
+                if (wantYear > 0 && y > 0 && Math.abs(y - wantYear) > 1) {
+                    continue; // for a series, TMDB's year is the latest season: allow some difference below
+                }
+                String link = netflixOffer(node);
+                if (!link.isEmpty()) {
+                    return link;
+                }
+            }
+            // A series whose newest season is recent has an older first year: take the first Netflix match.
+            for (int i = 0; i < edges.length(); i++) {
+                JSONObject node = edges.getJSONObject(i).getJSONObject("node");
+                if (want.equals(node.optString("objectType"))) {
+                    String link = netflixOffer(node);
+                    if (!link.isEmpty()) {
+                        return link;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // no link for this title
         }
+        return "";
+    }
+
+    private static String netflixOffer(JSONObject node) {
+        JSONArray offers = node.optJSONArray("offers");
+        if (offers == null) {
+            return "";
+        }
+        for (int i = 0; i < offers.length(); i++) {
+            JSONObject o = offers.optJSONObject(i);
+            if (o != null && "nfx".equals(o.optJSONObject("package") == null ? ""
+                    : o.optJSONObject("package").optString("shortName"))) {
+                String u = o.optString("standardWebURL");
+                if (u.startsWith("https://www.netflix.com/title/")) {
+                    return u;
+                }
+            }
+        }
+        return "";
+    }
+
+    /**
+     * Opens the title's Netflix page, skipping Netflix's profile picker (the source extra is what
+     * makes Netflix treat it as a trusted deep link). Without a link, just opens Netflix.
+     */
+    static Intent openIntent(String url, Intent fallback) {
+        if (url == null || !url.startsWith("https://www.netflix.com/title/")) {
+            return fallback;
+        }
+        return new Intent(Intent.ACTION_VIEW, Uri.parse(url)).setPackage(PKG).putExtra("source", "30");
     }
 }

@@ -1537,7 +1537,7 @@ public class HomeActivity extends Activity {
                 h.artUri = art.isEmpty() ? null : art;
                 h.banner = a.banner;
                 h.icon = a.icon;
-                h.intent = NetflixTop.openIntent(h.title);
+                h.intent = NetflixTop.openIntent(o.optString("url"), a.launch);
                 out.add(h);
             }
         }
