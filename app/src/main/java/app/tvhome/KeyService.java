@@ -170,6 +170,11 @@ public class KeyService extends AccessibilityService {
             return;
         }
         if (HomeActivity.visible != null) {
+            if (HomeActivity.visible.closeOpenDialog()) {
+                // A menu or TV Home's settings are already open on the home screen: close that, do not
+                // open the quick panel on top of it.
+                return;
+            }
             // On the home screen nothing is playing: a normal screen is fine, and the volume bar shows above it.
             try {
                 startActivity(new Intent(this, PanelActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));

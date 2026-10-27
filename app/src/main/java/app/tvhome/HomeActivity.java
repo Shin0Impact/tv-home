@@ -3086,6 +3086,20 @@ public class HomeActivity extends Activity {
         });
     }
 
+    /**
+     * Closes whatever dialog is open on the home screen (TV Home settings, a tile menu, ...) and says
+     * whether there was one. The remote's Settings button uses it so a second press closes the menu
+     * instead of opening the quick panel on top of it.
+     */
+    boolean closeOpenDialog() {
+        Dialog d = openDialog;
+        if (d != null && d.isShowing()) {
+            dismissDialog();
+            return true;
+        }
+        return false;
+    }
+
     /** The quick settings panel (orbs and notifications), opened by the remote's Settings button or the gear. */
     private void showQuickSettings() {
         dismissDialog();
