@@ -207,8 +207,24 @@ public class HomeActivity extends Activity {
     @Override
     public void onTrimMemory(int level) {
         super.onTrimMemory(level);
-        if (level >= TRIM_MEMORY_BACKGROUND) {
+        if (level >= TRIM_MEMORY_UI_HIDDEN) {
             imageCache.evictAll();
+        }
+    }
+
+    /** Another app is in front: let go of the cached pictures and the cards out of sight. */
+    @Override
+    protected void onStop() {
+        super.onStop();
+        imageCache.evictAll();
+        if (slots != null) {
+            for (Slot s : slots) {
+                // The centre card and its neighbours stay, so coming back never shows empty cards.
+                if (s != null && s.art != null && Math.abs(s.rel) >= 2) {
+                    s.art.setImageDrawable(null);
+                    s.key = null;
+                }
+            }
         }
     }
     private final Map<View, ObjectAnimator> scrollAnims = new HashMap<>();
@@ -401,6 +417,7 @@ public class HomeActivity extends Activity {
         }
         watchPackages();
         refresh(false);
+        showHero(false); // pictures let go in onStop are loaded again
         loadPrograms();
         recordHistoryAsync();
         ui.removeCallbacks(rotate);
@@ -2432,11 +2449,19 @@ public class HomeActivity extends Activity {
         try {
             Uri uri = Uri.parse(uriStr);
             String scheme = uri.getScheme();
+            boolean fromWeb = false;
+            File onDisk = null;
             if ("https".equals(scheme)) {
-                conn = (HttpURLConnection) new URL(uriStr).openConnection();
-                conn.setConnectTimeout(5000);
-                conn.setReadTimeout(8000);
-                in = conn.getInputStream();
+                onDisk = diskCopy(uriStr);
+                if (onDisk.exists()) {
+                    in = new FileInputStream(onDisk); // downloaded before: no network needed
+                } else {
+                    fromWeb = true;
+                    conn = (HttpURLConnection) new URL(uriStr).openConnection();
+                    conn.setConnectTimeout(5000);
+                    conn.setReadTimeout(8000);
+                    in = conn.getInputStream();
+                }
             } else if ("file".equals(scheme) && uri.getPath() != null
                     && (uri.getPath().startsWith(getFilesDir().getAbsolutePath())
                     || uri.getPath().startsWith(getCacheDir().getAbsolutePath()))) {
@@ -2449,6 +2474,9 @@ public class HomeActivity extends Activity {
             byte[] data = readAll(in, 3 * 1024 * 1024);
             if (data == null) {
                 return null;
+            }
+            if (fromWeb && onDisk != null) {
+                saveCopy(onDisk, data);
             }
             BitmapFactory.Options bounds = new BitmapFactory.Options();
             bounds.inJustDecodeBounds = true;
@@ -2477,6 +2505,37 @@ public class HomeActivity extends Activity {
             if (conn != null) {
                 conn.disconnect();
             }
+        }
+    }
+
+    /** Where the downloaded bytes of a picture are kept, so it can be drawn again without the network. */
+    private File diskCopy(String uri) {
+        File dir = new File(getCacheDir(), "art");
+        //noinspection ResultOfMethodCallIgnored
+        dir.mkdirs();
+        return new File(dir, Integer.toHexString(uri.hashCode()) + "_"
+                + Integer.toHexString(new StringBuilder(uri).reverse().toString().hashCode()));
+    }
+
+    /** Keeps the newest 60 pictures; the system may also empty this folder whenever it needs space. */
+    private void saveCopy(File f, byte[] data) {
+        try {
+            FileOutputStream out = new FileOutputStream(f);
+            try {
+                out.write(data);
+            } finally {
+                out.close();
+            }
+            File[] all = f.getParentFile().listFiles();
+            if (all != null && all.length > 60) {
+                java.util.Arrays.sort(all, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
+                for (int i = 0; i < all.length - 60; i++) {
+                    //noinspection ResultOfMethodCallIgnored
+                    all[i].delete();
+                }
+            }
+        } catch (Exception ignored) {
+            f.delete(); // never leave half a picture behind
         }
     }
 
