@@ -69,7 +69,9 @@ public class MediaListener extends NotificationListenerService {
                 if (n == null || ctx.getPackageName().equals(sbn.getPackageName())
                         || Notification.CATEGORY_TRANSPORT.equals(n.category)
                         || (n.flags & Notification.FLAG_GROUP_SUMMARY) != 0
-                        || (n.flags & Notification.FLAG_FOREGROUND_SERVICE) != 0) {
+                        || (n.flags & Notification.FLAG_FOREGROUND_SERVICE) != 0
+                        // "VPN is connected" and similar: Android will not let anyone clear them
+                        || !sbn.isClearable()) {
                     continue;
                 }
                 CharSequence title = n.extras.getCharSequence(Notification.EXTRA_TITLE);
