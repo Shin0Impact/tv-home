@@ -126,6 +126,8 @@ public class HomeActivity extends Activity {
         PendingIntent pending;
         MediaController controller;
         Intent intent;
+        /** For Netflix cards: the title behind the card, so opening it can teach the ranking. */
+        JSONObject netflixTitle;
         /** True for the plain "open this app" card shown when an app has nothing to offer. */
         boolean base;
     }
@@ -1318,6 +1320,9 @@ public class HomeActivity extends Activity {
             return;
         }
         HeroItem it = heroItems.get(Math.min(heroIdx, heroItems.size() - 1));
+        if (it.netflixTitle != null) {
+            NetflixTop.learn(prefs, it.netflixTitle);
+        }
         boolean opened = false;
         // Netflix's own "open" shortcut lands on the show's page; bring the app forward and
         // resume the paused session instead.
@@ -1524,14 +1529,13 @@ public class HomeActivity extends Activity {
             }
         }
         if (NetflixTop.PKG.equals(a.pkg) && prefs.getBoolean("netflix", true)) {
-            int rank = 0;
             for (JSONObject o : netflixItems) {
-                rank++;
                 HeroItem h = new HeroItem();
                 h.appLabel = a.label;
                 h.title = o.optString("title");
+                h.netflixTitle = o;
                 String year = o.optString("year");
-                h.subtitle = "New & popular on Netflix #" + rank + "  ·  " + o.optString("kind")
+                h.subtitle = "New & popular on Netflix  ·  " + o.optString("kind")
                         + (year.isEmpty() ? "" : "  ·  " + year);
                 String art = o.optString("art");
                 h.artUri = art.isEmpty() ? null : art;

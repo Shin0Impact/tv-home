@@ -23,8 +23,10 @@ final class NetflixTop {
     static final String PKG = "com.netflix.ninja";
     static final long REFRESH_MS = 12L * 3600 * 1000;
     private static final int COUNT = 10;
+    /** How many titles of each kind are fetched, to choose the ten cards from. */
+    private static final int CANDIDATES = 20;
     /** Bumped when the way the list is chosen changes, so an older saved list is not shown. */
-    private static final int VERSION = 3;
+    private static final int VERSION = 4;
     private static final String IMG = "https://image.tmdb.org/t/p/w780";
 
     private NetflixTop() {
@@ -94,34 +96,161 @@ final class NetflixTop {
             String lang = Locale.getDefault().toLanguageTag();
             List<JSONObject> movies = fetch("movie", key, cc, lang);
             List<JSONObject> shows = fetch("tv", key, cc, lang);
-            JSONArray out = new JSONArray();
-            for (int i = 0; out.length() < COUNT && (i < movies.size() || i < shows.size()); i++) {
-                if (i < movies.size() && out.length() < COUNT) {
-                    out.put(movies.get(i));
-                }
-                if (i < shows.size() && out.length() < COUNT) {
-                    out.put(shows.get(i));
-                }
-            }
+            JSONArray out = rank(p, movies, shows);
             if (out.length() == 0) {
                 return "TMDB gave no titles for " + cc;
             }
-            // Netflix's own page for each title, so OK can open the show itself.
+            // Netflix's own page for each title, so OK can open the show itself (remembered per title).
             int linked = 0;
+            JSONObject urls;
+            try {
+                urls = new JSONObject(p.getString("nf_urls", "{}"));
+            } catch (Exception e) {
+                urls = new JSONObject();
+            }
             for (int i = 0; i < out.length(); i++) {
                 JSONObject o = out.getJSONObject(i);
-                String link = netflixUrl(o.optString("title"), o.optString("kind"), o.optString("year"), cc);
+                String id = o.optString("kind") + ":" + o.optInt("id", 0) + ":" + cc;
+                String link = urls.optString(id, "");
+                if (link.isEmpty()) {
+                    link = netflixUrl(o.optString("title"), o.optString("kind"), o.optString("year"), cc);
+                    if (!link.isEmpty()) {
+                        urls.put(id, link);
+                    }
+                }
                 o.put("url", link);
                 if (!link.isEmpty()) {
                     linked++;
                 }
             }
+            p.edit().putString("nf_urls", urls.toString()).apply();
             p.edit().putString("nf_json", out.toString()).putLong("nf_at", System.currentTimeMillis())
                     .putString("nf_cc", cc).putInt("nf_ver", VERSION).apply();
             return out.length() + " titles for " + cc + ", " + linked + " with a Netflix link";
         } catch (Exception e) {
             return "failed: " + e.getClass().getSimpleName();
         }
+    }
+
+    // ------------------------------------------------------------ learning from what you open
+
+    /**
+     * What you opened lately: how often each genre and each kind (movie / series) came up, and the
+     * titles themselves. Kept only on the TV, in the preference "nf_taste".
+     */
+    private static JSONObject taste(SharedPreferences p) {
+        try {
+            return new JSONObject(p.getString("nf_taste", "{}"));
+        } catch (Exception e) {
+            return new JSONObject();
+        }
+    }
+
+    /** Remembers that this card was opened, and makes the next visit to the Netflix tile reload the list. */
+    static void learn(SharedPreferences p, JSONObject title) {
+        try {
+            JSONObject t = taste(p);
+            JSONObject g = t.optJSONObject("g") == null ? new JSONObject() : t.getJSONObject("g");
+            JSONObject k = t.optJSONObject("k") == null ? new JSONObject() : t.getJSONObject("k");
+            JSONArray seen = t.optJSONArray("seen") == null ? new JSONArray() : t.getJSONArray("seen");
+            JSONArray genres = title.optJSONArray("genres");
+            for (int i = 0; genres != null && i < genres.length(); i++) {
+                String id = String.valueOf(genres.getInt(i));
+                g.put(id, g.optInt(id, 0) + 1);
+            }
+            String kind = title.optString("kind");
+            k.put(kind, k.optInt(kind, 0) + 1);
+            String mark = kind + ":" + title.optInt("id", 0);
+            JSONArray keep = new JSONArray();
+            for (int i = Math.max(0, seen.length() - 39); i < seen.length(); i++) {
+                if (!mark.equals(seen.getString(i))) {
+                    keep.put(seen.getString(i));
+                }
+            }
+            keep.put(mark);
+            // Old habits fade: when the counts get large, halve them.
+            int total = 0;
+            java.util.Iterator<String> it = g.keys();
+            while (it.hasNext()) {
+                total += g.optInt(it.next(), 0);
+            }
+            if (total > 60) {
+                JSONObject half = new JSONObject();
+                it = g.keys();
+                while (it.hasNext()) {
+                    String id = it.next();
+                    int v = g.optInt(id, 0) / 2;
+                    if (v > 0) {
+                        half.put(id, v);
+                    }
+                }
+                g = half;
+            }
+            t.put("g", g).put("k", k).put("seen", keep);
+            p.edit().putString("nf_taste", t.toString()).remove("nf_at").apply();
+        } catch (Exception ignored) {
+            // no learning this time
+        }
+    }
+
+    static void forgetTaste(SharedPreferences p) {
+        p.edit().remove("nf_taste").remove("nf_at").apply();
+    }
+
+    /**
+     * Picks the ten cards: TMDB's popularity order, nudged towards the genres and the kind of title
+     * you open most. Titles you already opened are left out.
+     */
+    private static JSONArray rank(SharedPreferences p, List<JSONObject> movies, List<JSONObject> shows)
+            throws Exception {
+        JSONObject t = taste(p);
+        JSONObject g = t.optJSONObject("g") == null ? new JSONObject() : t.getJSONObject("g");
+        JSONObject k = t.optJSONObject("k") == null ? new JSONObject() : t.getJSONObject("k");
+        JSONArray seenArr = t.optJSONArray("seen") == null ? new JSONArray() : t.getJSONArray("seen");
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (int i = 0; i < seenArr.length(); i++) {
+            seen.add(seenArr.getString(i));
+        }
+        int maxG = 1;
+        java.util.Iterator<String> it = g.keys();
+        while (it.hasNext()) {
+            maxG = Math.max(maxG, g.optInt(it.next(), 0));
+        }
+        int maxK = 1;
+        it = k.keys();
+        while (it.hasNext()) {
+            maxK = Math.max(maxK, k.optInt(it.next(), 0));
+        }
+        final List<JSONObject> all = new ArrayList<>();
+        final java.util.Map<JSONObject, Double> score = new java.util.HashMap<>();
+        for (int pass = 0; pass < 2; pass++) {
+            List<JSONObject> list = pass == 0 ? movies : shows;
+            for (int i = 0; i < list.size(); i++) {
+                JSONObject o = list.get(i);
+                if (seen.contains(o.optString("kind") + ":" + o.optInt("id", 0))) {
+                    continue;
+                }
+                double base = 1.0 - (double) i / Math.max(1, list.size());
+                double affinity = 0;
+                JSONArray genres = o.optJSONArray("genres");
+                if (genres != null && genres.length() > 0) {
+                    double sum = 0;
+                    for (int j = 0; j < genres.length(); j++) {
+                        sum += (double) g.optInt(String.valueOf(genres.getInt(j)), 0) / maxG;
+                    }
+                    affinity = sum / genres.length();
+                }
+                double kindPull = (double) k.optInt(o.optString("kind"), 0) / maxK;
+                score.put(o, base + 0.9 * affinity + 0.3 * kindPull);
+                all.add(o);
+            }
+        }
+        java.util.Collections.sort(all, (a, b) -> Double.compare(score.get(b), score.get(a)));
+        JSONArray out = new JSONArray();
+        for (int i = 0; i < all.size() && out.length() < COUNT; i++) {
+            out.put(all.get(i));
+        }
+        return out;
     }
 
     private static List<JSONObject> fetch(String type, String key, String cc, String lang) throws Exception {
@@ -142,7 +271,7 @@ final class NetflixTop {
         if (res == null) {
             return out;
         }
-        for (int i = 0; i < res.length() && out.size() < COUNT; i++) {
+        for (int i = 0; i < res.length() && out.size() < CANDIDATES; i++) {
             JSONObject r = res.getJSONObject(i);
             String back = r.optString("backdrop_path", "");
             if (back.isEmpty() || "null".equals(back)) {
@@ -158,6 +287,9 @@ final class NetflixTop {
             o.put("kind", "movie".equals(type) ? "Movie" : "Series");
             o.put("year", date.length() >= 4 ? date.substring(0, 4) : "");
             o.put("art", IMG + back);
+            o.put("id", r.optInt("id", 0));
+            JSONArray genres = r.optJSONArray("genre_ids");
+            o.put("genres", genres == null ? new JSONArray() : genres);
             out.add(o);
         }
         return out;

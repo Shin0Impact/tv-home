@@ -513,6 +513,12 @@ final class SettingsPanel {
                     homeChanged();
                 });
                 addChoice(row, items, nf);
+                View taste = choice("Reset Netflix taste (forget what you opened)", 0, false, false);
+                taste.setOnClickListener(v -> {
+                    NetflixTop.forgetTaste(prefs);
+                    homeChanged();
+                });
+                addChoice(row, items, taste);
                 View credit = choice("Netflix cards use the TMDB API but are not endorsed or certified by TMDB",
                         0, false, false);
                 ((TextView) ((LinearLayout) credit).getChildAt(0)).setMaxWidth(dp(1000));
