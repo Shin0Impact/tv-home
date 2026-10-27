@@ -16,9 +16,13 @@ import android.view.WindowManager;
  */
 public class PanelActivity extends Activity {
 
+    /** The panel while it is on screen; the remote's Settings button closes it instead of opening a second one. */
+    static volatile PanelActivity open;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        open = this;
         float density = getResources().getDisplayMetrics().density;
         setContentView(new QuickPanel(this, this::finish, null).build());
         Window window = getWindow();
@@ -38,6 +42,9 @@ public class PanelActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        if (open == this) {
+            open = null;
+        }
         finish();
     }
 

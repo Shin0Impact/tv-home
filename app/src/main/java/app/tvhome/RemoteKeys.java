@@ -11,8 +11,8 @@ import android.content.pm.PackageManager;
  */
 final class RemoteKeys {
 
-    static final String[] NAMES = {"Netflix", "Prime Video", "Guard", "Web", "YouTube", "TCL",
-            "TCL Home", "TV", "123", "Info"};
+    static final String[] NAMES = {"Netflix", "Prime Video", "Guard", "Web", "YouTube", "TCL Home",
+            "TCL", "TV", "123", "Info"};
     static final int[] CODES = {4062, 4099, 4140, 4159, 4065, 4020, 4137, 4001, 4056, 165};
     // "" = leave the button to the TV's own action. Info is left alone by default because video apps use it.
     static final String[] DEFAULTS = {
@@ -26,6 +26,9 @@ final class RemoteKeys {
             "",
             "",
             ""};
+
+    /** Not a package: the button jumps to the previous app, like pressing Home twice. */
+    static final String PREVIOUS = "@previous";
 
     private RemoteKeys() {
     }

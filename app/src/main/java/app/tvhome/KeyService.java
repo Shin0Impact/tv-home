@@ -87,8 +87,23 @@ public class KeyService extends AccessibilityService {
         int appKey = RemoteKeys.indexOf(key);
         if (appKey >= 0) {
             // One of the remote's app buttons: open the app chosen in TV Home's settings.
-            Intent open = RemoteKeys.launchIntent(getPackageManager(),
-                    RemoteKeys.target(getSharedPreferences("home", MODE_PRIVATE), appKey));
+            String chosen = RemoteKeys.target(getSharedPreferences("home", MODE_PRIVATE), appKey);
+            if (RemoteKeys.PREVIOUS.equals(chosen)) {
+                // Same jump as pressing Home twice: from inside an app to the one used before it,
+                // from the home screen back to the app you came from.
+                if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                    boolean inApp = HomeActivity.visible == null && overlay == null;
+                    String dest = (inApp && prevApp != null && !prevApp.equals(curApp)) ? prevApp : curApp;
+                    if (dest != null) {
+                        if (overlay != null) {
+                            closePanel();
+                        }
+                        openApp(dest);
+                    }
+                }
+                return true;
+            }
+            Intent open = RemoteKeys.launchIntent(getPackageManager(), chosen);
             if (open == null) {
                 return false; // nothing chosen (or not installed): the TV does what it always did
             }
@@ -167,6 +182,13 @@ public class KeyService extends AccessibilityService {
     private void togglePanel() {
         if (overlay != null) {
             closePanel();
+            return;
+        }
+        PanelActivity shown = PanelActivity.open;
+        if (shown != null) {
+            // The panel is already open (opened from the gear or an earlier press): close it.
+            PanelActivity.open = null;
+            shown.finish();
             return;
         }
         if (HomeActivity.visible != null) {

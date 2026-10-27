@@ -193,6 +193,13 @@ final class SettingsPanel {
         title.setPadding(dp(6), 0, 0, dp(18));
         panel.addView(title);
 
+        // Rows shrink on screens too short for all of them, so Done is never cut off.
+        int room = ctx.getResources().getDisplayMetrics().heightPixels
+                - dp(14 + 14 + 22 + 16)   // panel margins and padding
+                - dp(26 + 18 + 12)        // title
+                - dp(64)                  // Done
+                - TITLES.length * dp(8);  // gaps
+        final int rowH = Math.max(dp(40), Math.min(dp(58), room / TITLES.length));
         final List<View> rows = new ArrayList<>();
         for (int i = 0; i < TITLES.length; i++) {
             final int index = i;
@@ -203,7 +210,7 @@ final class SettingsPanel {
             });
             rows.add(row);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(58));
+                    ViewGroup.LayoutParams.MATCH_PARENT, rowH);
             lp.bottomMargin = dp(8);
             panel.addView(row, lp);
         }
@@ -283,9 +290,10 @@ final class SettingsPanel {
         // Left: this setting's name, with the one above and below it, so Up / Down is obvious.
         LinearLayout nav = new LinearLayout(ctx);
         nav.setOrientation(LinearLayout.VERTICAL);
-        nav.addView(navText(index > 0 ? TITLES[index - 1] : " ", false));
+        // Small arrows show that Up / Down switches to the setting above / below.
+        nav.addView(navText(index > 0 ? "▲  " + TITLES[index - 1] : " ", false));
         nav.addView(navText(TITLES[index], true));
-        nav.addView(navText(index < TITLES.length - 1 ? TITLES[index + 1] : " ", false));
+        nav.addView(navText(index < TITLES.length - 1 ? "▼  " + TITLES[index + 1] : " ", false));
         panel.addView(nav, new LinearLayout.LayoutParams(dp(210), ViewGroup.LayoutParams.WRAP_CONTENT));
 
         final LinearLayout choices = new LinearLayout(ctx);
@@ -413,8 +421,9 @@ final class SettingsPanel {
                         showBar(index, hi);
                     });
                     sw.setOnFocusChangeListener((v, f) -> v.invalidate());
-                    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(60), dp(60));
-                    lp.rightMargin = dp(8);
+                    // Same height as the choices in the other bars, so every bar is the same size.
+                    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(52), dp(52));
+                    lp.rightMargin = dp(10);
                     row.addView(sw, lp);
                     items.add(sw);
                 }
@@ -513,15 +522,16 @@ final class SettingsPanel {
                     homeChanged();
                 });
                 addChoice(row, items, nf);
-                View taste = choice("Reset Netflix taste (forget what you opened)", 0, false, false);
+                View taste = choice("Reset Netflix taste", 0, false, false);
                 taste.setOnClickListener(v -> {
                     NetflixTop.forgetTaste(prefs);
                     homeChanged();
                 });
                 addChoice(row, items, taste);
-                View credit = choice("Netflix cards use the TMDB API but are not endorsed or certified by TMDB",
-                        0, false, false);
-                ((TextView) ((LinearLayout) credit).getChildAt(0)).setMaxWidth(dp(1000));
+                View credit = choice("Credits · TMDB", 0, false, false);
+                credit.setOnClickListener(v -> android.widget.Toast.makeText(ctx,
+                        "Netflix cards use the TMDB API but are not endorsed or certified by TMDB",
+                        android.widget.Toast.LENGTH_LONG).show());
                 addChoice(row, items, credit);
                 int hiddenCount = 0;
                 for (String s : prefs.getString("hidden", "").split(",")) {
@@ -562,6 +572,9 @@ final class SettingsPanel {
     private String appName(String pkg) {
         if (pkg == null || pkg.isEmpty()) {
             return "TV default";
+        }
+        if (RemoteKeys.PREVIOUS.equals(pkg)) {
+            return "Previous app";
         }
         try {
             android.content.pm.PackageManager pm = ctx.getPackageManager();
@@ -629,6 +642,8 @@ final class SettingsPanel {
         final List<String> pkgs = new ArrayList<>();
         labels.add("TV default");
         pkgs.add("");
+        labels.add("Previous app");
+        pkgs.add(RemoteKeys.PREVIOUS);
         for (java.util.Map.Entry<String, String> e : apps.entrySet()) {
             labels.add(e.getKey().trim());
             pkgs.add(e.getValue());
