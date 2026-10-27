@@ -238,10 +238,11 @@ final class NetflixTop {
                     for (int j = 0; j < genres.length(); j++) {
                         sum += (double) g.optInt(String.valueOf(genres.getInt(j)), 0) / maxG;
                     }
-                    affinity = sum / genres.length();
+                    // Each shared genre counts in full; a title is not punished for having many genres.
+                    affinity = Math.min(1.5, sum);
                 }
                 double kindPull = (double) k.optInt(o.optString("kind"), 0) / maxK;
-                score.put(o, base + 0.9 * affinity + 0.3 * kindPull);
+                score.put(o, base + 1.6 * affinity + 0.5 * kindPull);
                 all.add(o);
             }
         }
