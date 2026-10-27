@@ -1322,6 +1322,25 @@ public class HomeActivity extends Activity {
         HeroItem it = heroItems.get(Math.min(heroIdx, heroItems.size() - 1));
         if (it.netflixTitle != null) {
             NetflixTop.learn(prefs, it.netflixTitle);
+            // Fetch a new set in the background, shaped by what you opened, so it is ready when you come back.
+            if (!net.isShutdown() && !netflixLoading) {
+                netflixLoading = true;
+                net.execute(() -> {
+                    NetflixTop.refresh(prefs);
+                    netflixItems = NetflixTop.cached(prefs);
+                    netflixLoading = false;
+                    ui.post(() -> {
+                        if (NetflixTop.PKG.equals(lastFocusPkg) && !netflixItems.isEmpty()) {
+                            for (App x : shownApps) {
+                                if (NetflixTop.PKG.equals(x.pkg)) {
+                                    focusedApp = null;
+                                    applyHeroApp(x);
+                                }
+                            }
+                        }
+                    });
+                });
+            }
         }
         boolean opened = false;
         // Netflix's own "open" shortcut lands on the show's page; bring the app forward and

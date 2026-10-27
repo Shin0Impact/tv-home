@@ -23,10 +23,8 @@ final class NetflixTop {
     static final String PKG = "com.netflix.ninja";
     static final long REFRESH_MS = 12L * 3600 * 1000;
     private static final int COUNT = 10;
-    /** How many titles of each kind are fetched, to choose the ten cards from. */
-    private static final int CANDIDATES = 20;
     /** Bumped when the way the list is chosen changes, so an older saved list is not shown. */
-    private static final int VERSION = 4;
+    private static final int VERSION = 6;
     private static final String IMG = "https://image.tmdb.org/t/p/w780";
 
     private NetflixTop() {
@@ -94,8 +92,65 @@ final class NetflixTop {
         try {
             String cc = country(p, true);
             String lang = Locale.getDefault().toLanguageTag();
-            List<JSONObject> movies = fetch("movie", key, cc, lang);
-            List<JSONObject> shows = fetch("tv", key, cc, lang);
+            // What you opened decides what we ask for: the usual popular list, plus fresh pages
+            // of your favourite genres. Nothing is kept except the small taste summary.
+            String like = favouriteGenres(p);
+            List<JSONObject> movies = fetch("movie", key, cc, lang, "", 2);
+            List<JSONObject> shows = fetch("tv", key, cc, lang, "", 2);
+            if (!like.isEmpty()) {
+                addNew(movies, fetch("movie", key, cc, lang, like, 3));
+                addNew(shows, fetch("tv", key, cc, lang, like, 3));
+            }
+            return build(p, cc, movies, shows, System.currentTimeMillis());
+        } catch (Exception e) {
+            return "failed: " + e.getClass().getSimpleName();
+        }
+    }
+
+    private static void addNew(List<JSONObject> into, List<JSONObject> more) {
+        for (JSONObject o : more) {
+            boolean dup = false;
+            for (JSONObject x : into) {
+                if (x.optInt("id", -1) == o.optInt("id", -2)) {
+                    dup = true;
+                    break;
+                }
+            }
+            if (!dup) {
+                into.add(o);
+            }
+        }
+    }
+
+    /** The two genres you open most, as a TMDB filter ("a|b" means either). Empty until you opened something. */
+    private static String favouriteGenres(SharedPreferences p) {
+        JSONObject g = taste(p).optJSONObject("g");
+        if (g == null) {
+            return "";
+        }
+        String first = "";
+        String second = "";
+        int c1 = 0;
+        int c2 = 0;
+        java.util.Iterator<String> it = g.keys();
+        while (it.hasNext()) {
+            String id = it.next();
+            int c = g.optInt(id, 0);
+            if (c > c1) {
+                second = first;
+                c2 = c1;
+                first = id;
+                c1 = c;
+            } else if (c > c2) {
+                second = id;
+                c2 = c;
+            }
+        }
+        return second.isEmpty() ? first : first + "|" + second;
+    }
+
+    private static String build(SharedPreferences p, String cc, List<JSONObject> movies,
+            List<JSONObject> shows, long stamp) throws Exception {
             JSONArray out = rank(p, movies, shows);
             if (out.length() == 0) {
                 return "TMDB gave no titles for " + cc;
@@ -124,12 +179,9 @@ final class NetflixTop {
                 }
             }
             p.edit().putString("nf_urls", urls.toString()).apply();
-            p.edit().putString("nf_json", out.toString()).putLong("nf_at", System.currentTimeMillis())
+            p.edit().putString("nf_json", out.toString()).putLong("nf_at", stamp)
                     .putString("nf_cc", cc).putInt("nf_ver", VERSION).apply();
             return out.length() + " titles for " + cc + ", " + linked + " with a Netflix link";
-        } catch (Exception e) {
-            return "failed: " + e.getClass().getSimpleName();
-        }
     }
 
     // ------------------------------------------------------------ learning from what you open
@@ -146,7 +198,7 @@ final class NetflixTop {
         }
     }
 
-    /** Remembers that this card was opened, and makes the next visit to the Netflix tile reload the list. */
+    /** Remembers that this card was opened, (the caller then fetches a new list). */
     static void learn(SharedPreferences p, JSONObject title) {
         try {
             JSONObject t = taste(p);
@@ -187,14 +239,14 @@ final class NetflixTop {
                 g = half;
             }
             t.put("g", g).put("k", k).put("seen", keep);
-            p.edit().putString("nf_taste", t.toString()).remove("nf_at").apply();
+            p.edit().putString("nf_taste", t.toString()).apply();
         } catch (Exception ignored) {
             // no learning this time
         }
     }
 
     static void forgetTaste(SharedPreferences p) {
-        p.edit().remove("nf_taste").remove("nf_at").apply();
+        p.edit().remove("nf_taste").apply();
     }
 
     /**
@@ -254,7 +306,8 @@ final class NetflixTop {
         return out;
     }
 
-    private static List<JSONObject> fetch(String type, String key, String cc, String lang) throws Exception {
+    private static List<JSONObject> fetch(String type, String key, String cc, String lang, String genres,
+            int pages) throws Exception {
         // New and popular: released (or, for series, aired) in roughly the last six months.
         java.util.Calendar since = java.util.Calendar.getInstance();
         since.add(java.util.Calendar.DAY_OF_YEAR, -180);
@@ -262,36 +315,39 @@ final class NetflixTop {
         String url = "https://api.themoviedb.org/3/discover/" + type + "?api_key=" + URLEncoder.encode(key, "UTF-8")
                 + "&with_watch_providers=8&watch_monetization_types=flatrate&watch_region=" + cc
                 + ("movie".equals(type) ? "&primary_release_date.gte=" : "&air_date.gte=") + from
-                + "&sort_by=popularity.desc&include_adult=false&language=" + lang;
-        String json = Net.text(url);
+                + "&sort_by=popularity.desc&include_adult=false&language=" + lang
+                + (genres.isEmpty() ? "" : "&with_genres=" + URLEncoder.encode(genres, "UTF-8")) + "&page=";
         List<JSONObject> out = new ArrayList<>();
-        if (json == null) {
-            return out;
-        }
-        JSONArray res = new JSONObject(json).optJSONArray("results");
-        if (res == null) {
-            return out;
-        }
-        for (int i = 0; i < res.length() && out.size() < CANDIDATES; i++) {
-            JSONObject r = res.getJSONObject(i);
-            String back = r.optString("backdrop_path", "");
-            if (back.isEmpty() || "null".equals(back)) {
-                continue; // a card needs a wide picture
+        for (int page = 1; page <= pages; page++) {
+            String json = Net.text(url + page);
+            if (json == null) {
+                break;
             }
-            String title = r.optString("movie".equals(type) ? "title" : "name", "");
-            if (title.isEmpty()) {
-                continue;
+            JSONArray res = new JSONObject(json).optJSONArray("results");
+            if (res == null) {
+                break;
             }
-            String date = r.optString("movie".equals(type) ? "release_date" : "first_air_date", "");
-            JSONObject o = new JSONObject();
-            o.put("title", title);
-            o.put("kind", "movie".equals(type) ? "Movie" : "Series");
-            o.put("year", date.length() >= 4 ? date.substring(0, 4) : "");
-            o.put("art", IMG + back);
-            o.put("id", r.optInt("id", 0));
-            JSONArray genres = r.optJSONArray("genre_ids");
-            o.put("genres", genres == null ? new JSONArray() : genres);
-            out.add(o);
+            for (int i = 0; i < res.length() && out.size() < pages * 20; i++) {
+                JSONObject r = res.getJSONObject(i);
+                String back = r.optString("backdrop_path", "");
+                if (back.isEmpty() || "null".equals(back)) {
+                    continue; // a card needs a wide picture
+                }
+                String title = r.optString("movie".equals(type) ? "title" : "name", "");
+                if (title.isEmpty()) {
+                    continue;
+                }
+                String date = r.optString("movie".equals(type) ? "release_date" : "first_air_date", "");
+                JSONObject o = new JSONObject();
+                o.put("title", title);
+                o.put("kind", "movie".equals(type) ? "Movie" : "Series");
+                o.put("year", date.length() >= 4 ? date.substring(0, 4) : "");
+                o.put("art", IMG + back);
+                o.put("id", r.optInt("id", 0));
+                JSONArray genres = r.optJSONArray("genre_ids");
+                o.put("genres", genres == null ? new JSONArray() : genres);
+                out.add(o);
+            }
         }
         return out;
     }
