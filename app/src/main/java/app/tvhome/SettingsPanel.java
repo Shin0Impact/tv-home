@@ -523,6 +523,20 @@ final class SettingsPanel {
                         0, false, false);
                 ((TextView) ((LinearLayout) credit).getChildAt(0)).setMaxWidth(dp(1000));
                 addChoice(row, items, credit);
+                int hiddenCount = 0;
+                for (String s : prefs.getString("hidden", "").split(",")) {
+                    if (!s.isEmpty()) {
+                        hiddenCount++;
+                    }
+                }
+                if (hiddenCount > 0) {
+                    View unhide = choice("Show hidden apps again (" + hiddenCount + ")", 0, false, false);
+                    unhide.setOnClickListener(v -> {
+                        prefs.edit().remove("hidden").apply();
+                        homeChanged();
+                    });
+                    addChoice(row, items, unhide);
+                }
                 View order = choice("Reset app order", 0, false, false);
                 order.setOnClickListener(v -> {
                     prefs.edit().remove("order").apply();

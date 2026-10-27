@@ -384,6 +384,7 @@ public class HomeActivity extends Activity {
                 });
             });
         }
+        watchPackages();
         refresh(false);
         loadPrograms();
         recordHistoryAsync();
@@ -550,9 +551,42 @@ public class HomeActivity extends Activity {
         if (current == this) {
             current = null;
         }
+        if (pkgReceiver != null) {
+            try {
+                unregisterReceiver(pkgReceiver);
+            } catch (Exception ignored) {
+                // not registered
+            }
+            pkgReceiver = null;
+        }
         io.shutdown();
         net.shutdown();
     }
+
+    /** Rebuilds the app list when an app is installed, removed, enabled or disabled, even while we are on screen. */
+    private android.content.BroadcastReceiver pkgReceiver;
+
+    private void watchPackages() {
+        if (pkgReceiver != null) {
+            return;
+        }
+        pkgReceiver = new android.content.BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                ui.removeCallbacks(packagesChanged);
+                ui.postDelayed(packagesChanged, 700);
+            }
+        };
+        android.content.IntentFilter f = new android.content.IntentFilter();
+        f.addAction(Intent.ACTION_PACKAGE_ADDED);
+        f.addAction(Intent.ACTION_PACKAGE_REMOVED);
+        f.addAction(Intent.ACTION_PACKAGE_CHANGED);
+        f.addAction(Intent.ACTION_PACKAGE_REPLACED);
+        f.addDataScheme("package");
+        registerReceiver(pkgReceiver, f);
+    }
+
+    private final Runnable packagesChanged = () -> refresh(false);
 
     private void dismissDialog() {
         if (openDialog != null) {
@@ -2114,6 +2148,10 @@ public class HomeActivity extends Activity {
                 map.put(pkg, a);
             }
         }
+        // Apps you chose to hide are not shown anywhere (Settings -> Home screen shows them again).
+        for (String hidden : listPref("hidden")) {
+            map.remove(hidden);
+        }
         // Folders: their apps leave the main list and sit behind one folder tile.
         List<App> folderTiles = new ArrayList<>();
         JSONArray saved = folderList();
@@ -2467,6 +2505,7 @@ public class HomeActivity extends Activity {
             } else {
                 items.add("Move");
                 items.add("Add to folder");
+                items.add("Hide from home");
             }
             items.add("App info");
             items.add("Force stop");
@@ -2485,6 +2524,15 @@ public class HomeActivity extends Activity {
                         refresh(true);
                     } else if ("Add to folder".equals(it)) {
                         pickFolder(a);
+                    } else if ("Hide from home".equals(it)) {
+                        List<String> hidden = listPref("hidden");
+                        if (!hidden.contains(a.pkg)) {
+                            hidden.add(a.pkg);
+                        }
+                        saveListPref("hidden", hidden);
+                        Toast.makeText(this, a.label + " hidden. Show it again in Settings > Home screen",
+                                Toast.LENGTH_LONG).show();
+                        refresh(true);
                     } else if ("Take out of folder".equals(it)) {
                         removeFromFolder(inFolder, a.pkg);
                         focusAfter = a.pkg;
