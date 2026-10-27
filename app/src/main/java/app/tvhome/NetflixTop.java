@@ -306,7 +306,7 @@ final class NetflixTop {
         return out;
     }
 
-    private static List<JSONObject> fetch(String type, String key, String cc, String lang, String genres,
+    private static List<JSONObject> fetch(String type, String key, String cc, String lang, String onlyGenres,
             int pages) throws Exception {
         // New and popular: released (or, for series, aired) in roughly the last six months.
         java.util.Calendar since = java.util.Calendar.getInstance();
@@ -316,7 +316,7 @@ final class NetflixTop {
                 + "&with_watch_providers=8&watch_monetization_types=flatrate&watch_region=" + cc
                 + ("movie".equals(type) ? "&primary_release_date.gte=" : "&air_date.gte=") + from
                 + "&sort_by=popularity.desc&include_adult=false&language=" + lang
-                + (genres.isEmpty() ? "" : "&with_genres=" + URLEncoder.encode(genres, "UTF-8")) + "&page=";
+                + (onlyGenres.isEmpty() ? "" : "&with_genres=" + URLEncoder.encode(onlyGenres, "UTF-8")) + "&page=";
         List<JSONObject> out = new ArrayList<>();
         for (int page = 1; page <= pages; page++) {
             String json = Net.text(url + page);
