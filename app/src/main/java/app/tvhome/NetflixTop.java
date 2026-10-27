@@ -101,7 +101,9 @@ final class NetflixTop {
                 addNew(movies, fetch("movie", key, cc, lang, like, 3));
                 addNew(shows, fetch("tv", key, cc, lang, like, 3));
             }
-            return build(p, cc, movies, shows, System.currentTimeMillis());
+            String status = build(p, cc, movies, shows, System.currentTimeMillis());
+            return status + " [liked genres: " + (like.isEmpty() ? "none yet" : like) + ", candidates: "
+                    + (movies.size() + shows.size()) + "]";
         } catch (Exception e) {
             return "failed: " + e.getClass().getSimpleName();
         }
@@ -246,7 +248,7 @@ final class NetflixTop {
     }
 
     static void forgetTaste(SharedPreferences p) {
-        p.edit().remove("nf_taste").apply();
+        p.edit().remove("nf_taste").remove("nf_at").apply();
     }
 
     /**
