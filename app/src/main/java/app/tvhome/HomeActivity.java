@@ -195,7 +195,22 @@ public class HomeActivity extends Activity {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final ExecutorService net = Executors.newFixedThreadPool(2);
     private final Handler ui = new Handler(Looper.getMainLooper());
-    private final LruCache<String, Bitmap> imageCache = new LruCache<>(16);
+    /** Card pictures, limited by memory (about 20 MB), not by how many there are. */
+    private final LruCache<String, Bitmap> imageCache = new LruCache<String, Bitmap>(20 * 1024) {
+        @Override
+        protected int sizeOf(String key, Bitmap value) {
+            return Math.max(1, value.getByteCount() / 1024);
+        }
+    };
+
+    /** The TV is short of memory: drop the cached pictures (they are fetched again when needed). */
+    @Override
+    public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        if (level >= TRIM_MEMORY_BACKGROUND) {
+            imageCache.evictAll();
+        }
+    }
     private final Map<View, ObjectAnimator> scrollAnims = new HashMap<>();
     private final Map<String, View> tiles = new HashMap<>();
     private final List<App> shownApps = new ArrayList<>();
@@ -2444,6 +2459,10 @@ public class HomeActivity extends Activity {
             }
             BitmapFactory.Options opts = new BitmapFactory.Options();
             opts.inSampleSize = sample;
+            if ("image/jpeg".equals(bounds.outMimeType)) {
+                // Photos have no see-through parts: half the memory per pixel, no visible difference.
+                opts.inPreferredConfig = Bitmap.Config.RGB_565;
+            }
             return BitmapFactory.decodeByteArray(data, 0, data.length, opts);
         } catch (Exception e) {
             return null;
