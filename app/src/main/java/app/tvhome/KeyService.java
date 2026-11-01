@@ -103,6 +103,12 @@ public class KeyService extends AccessibilityService {
                 }
                 return true;
             }
+            if (RemoteKeys.CLEAR_MEMORY.equals(chosen)) {
+                if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                    clearMemory();
+                }
+                return true;
+            }
             Intent open = RemoteKeys.launchIntent(getPackageManager(), chosen);
             if (open == null) {
                 return false; // nothing chosen (or not installed): the TV does what it always did
@@ -331,6 +337,55 @@ public class KeyService extends AccessibilityService {
     private String prevApp;
     private long lastHomeAt;
     private boolean swallowHomeUp;
+
+    /**
+     * Ends the background processes of the other apps you can launch (Android only kills ones that are
+     * not on screen, not playing and not a running service, so nothing visible is touched), then says
+     * how much memory came free. Caches and files are not touched.
+     */
+    private void clearMemory() {
+        try {
+            final android.app.ActivityManager am =
+                    (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
+            final android.app.ActivityManager.MemoryInfo before = new android.app.ActivityManager.MemoryInfo();
+            am.getMemoryInfo(before);
+            java.util.Set<String> pkgs = new java.util.HashSet<>();
+            String[] cats = {"android.intent.category.LEANBACK_LAUNCHER", "android.intent.category.LAUNCHER"};
+            for (String cat : cats) {
+                Intent q = new Intent(Intent.ACTION_MAIN).addCategory(cat);
+                for (android.content.pm.ResolveInfo ri : getPackageManager().queryIntentActivities(q, 0)) {
+                    pkgs.add(ri.activityInfo.packageName);
+                }
+            }
+            for (String p : pkgs) {
+                if (p.equals(getPackageName()) || p.equals(curApp) || p.startsWith("com.android.")
+                        || p.startsWith("com.google.android.inputmethod") || p.startsWith("com.google.android.tv.remote")
+                        || p.equals("com.tcl.tv") || p.equals("com.tcl.ttvs") || p.equals("com.tcl.suspension")) {
+                    continue;
+                }
+                try {
+                    am.killBackgroundProcesses(p);
+                } catch (Exception ignored) {
+                    // that one stays
+                }
+            }
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                try {
+                    android.app.ActivityManager.MemoryInfo after = new android.app.ActivityManager.MemoryInfo();
+                    am.getMemoryInfo(after);
+                    long freed = (after.availMem - before.availMem) / (1024 * 1024);
+                    android.widget.Toast.makeText(KeyService.this,
+                            freed > 0 ? "Memory cleared: " + freed + " MB freed"
+                                    : "Memory was already clear",
+                            android.widget.Toast.LENGTH_SHORT).show();
+                } catch (Exception ignored) {
+                    // no message
+                }
+            }, 1200);
+        } catch (Exception ignored) {
+            // nothing to do
+        }
+    }
 
     private void openApp(String pkg) {
         try {

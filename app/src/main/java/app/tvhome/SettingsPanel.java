@@ -576,6 +576,9 @@ final class SettingsPanel {
         if (RemoteKeys.PREVIOUS.equals(pkg)) {
             return "Previous app";
         }
+        if (RemoteKeys.CLEAR_MEMORY.equals(pkg)) {
+            return "Clear memory";
+        }
         try {
             android.content.pm.PackageManager pm = ctx.getPackageManager();
             return String.valueOf(pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)));
@@ -644,6 +647,8 @@ final class SettingsPanel {
         pkgs.add("");
         labels.add("Previous app");
         pkgs.add(RemoteKeys.PREVIOUS);
+        labels.add("Clear memory");
+        pkgs.add(RemoteKeys.CLEAR_MEMORY);
         for (java.util.Map.Entry<String, String> e : apps.entrySet()) {
             labels.add(e.getKey().trim());
             pkgs.add(e.getValue());
