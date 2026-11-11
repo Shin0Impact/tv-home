@@ -5,6 +5,15 @@ background work, and no dependencies beyond the Android framework.
 
 Built for a TCL 55C655 Pro (Google TV, Android 12, ~2 GB RAM), where heavier launchers were laggy.
 
+## At a glance
+
+| | |
+|---|---|
+| **What** | Home screen launcher for Android TV / Google TV |
+| **Stack** | Java with the Android framework only, no third-party dependencies |
+| **Target** | TCL 55C655 Pro (Google TV, Android 12, about 2 GB RAM) |
+| **Build** | GitHub Actions builds the APK on every push and publishes a Latest build release |
+
 ## What it does
 
 - **Hero cards** at the top: the live media session of the app you are on, its recent history, and
